@@ -1,0 +1,12 @@
+(lang dune 3.21)
+
+(generate_opam_files true)
+(executables_implicit_empty_intf true)
+
+(name imgmeta)
+(version 2026.516.0)
+(license MIT)
+(authors "Yifei Sun <ysun@hey.com>")
+(maintainers "Yifei Sun <ysun@hey.com>")
+
+(package (name imgmeta))
