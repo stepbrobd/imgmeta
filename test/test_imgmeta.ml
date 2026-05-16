@@ -373,6 +373,61 @@ let test_isobmff_find_top () =
   | Some box -> Alcotest.(check string) "found free" "free" box.kind
 ;;
 
+let isobmff_full_box ty body =
+  let inner = Bytes.create (4 + Bytes.length body) in
+  Bytes.fill inner 0 4 '\x00';
+  Bytes.blit body 0 inner 4 (Bytes.length body);
+  isobmff_box ty inner
+;;
+
+let ispe_body ~width ~height =
+  let b = Bytes.create 8 in
+  Bytes.set_int32_be b 0 (Int32.of_int width);
+  Bytes.set_int32_be b 4 (Int32.of_int height);
+  b
+;;
+
+let pixi_body ~depth =
+  let b = Bytes.create 4 in
+  Bytes.set_uint8 b 0 3;
+  Bytes.set_uint8 b 1 depth;
+  Bytes.set_uint8 b 2 depth;
+  Bytes.set_uint8 b 3 depth;
+  b
+;;
+
+let heif_file ~width ~height ~depth =
+  let ftyp = isobmff_box "ftyp" (Bytes.of_string "heic\x00\x00\x00\x00mif1") in
+  let ispe = isobmff_full_box "ispe" (ispe_body ~width ~height) in
+  let pixi = isobmff_full_box "pixi" (pixi_body ~depth) in
+  let ipco = isobmff_box "ipco" (Bytes.cat ispe pixi) in
+  let iprp = isobmff_box "iprp" ipco in
+  let meta = isobmff_full_box "meta" iprp in
+  Bytes.cat ftyp meta
+;;
+
+let test_heif_synthesized () =
+  let data = heif_file ~width:1920 ~height:1080 ~depth:10 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Heif.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 1920 m.width;
+    Alcotest.(check int) "height" 1080 m.height;
+    Alcotest.(check int) "depth" 10 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_heif_fixture () =
+  let data = load_bytes "fixture.heic" in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Heif.read_metadata r with
+  | Error e -> Alcotest.failf "fixture.heic failed %a" Imgmeta.pp_error e
+  | Ok m ->
+    Alcotest.(check int) "width" 320 m.width;
+    Alcotest.(check int) "height" 320 m.height;
+    Alcotest.(check int) "depth" 8 m.depth
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -416,6 +471,10 @@ let () =
     ; ( "isobmff"
       , [ Alcotest.test_case "walk top level" `Quick test_isobmff_walk_top_level
         ; Alcotest.test_case "find top" `Quick test_isobmff_find_top
+        ] )
+    ; ( "heif"
+      , [ Alcotest.test_case "synthesized 1920x1080 10bit" `Quick test_heif_synthesized
+        ; Alcotest.test_case "fixture 320x320 8bit" `Quick test_heif_fixture
         ] )
     ]
 ;;
