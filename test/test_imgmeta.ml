@@ -61,6 +61,34 @@ let test_reader_bytes_truncated () =
   Alcotest.(check bool) "raises truncated when over reading" true raised
 ;;
 
+let with_temp_file content f =
+  let path = Filename.temp_file "imgmeta_" ".bin" in
+  Out_channel.with_open_bin path (fun oc -> Out_channel.output_string oc content);
+  Fun.protect ~finally:(fun () -> Sys.remove path) (fun () -> f path)
+;;
+
+let test_reader_file_read () =
+  with_temp_file "hello world" (fun path ->
+    match Imgmeta.Reader.of_file path with
+    | Error _ -> Alcotest.fail "of_file failed"
+    | Ok r ->
+      let head = Imgmeta.Reader.read r 5 in
+      Alcotest.(check string) "first 5" "hello" (Bytes.to_string head);
+      let tail = Imgmeta.Reader.read_at r ~pos:6 ~len:5 in
+      Alcotest.(check string) "tail" "world" (Bytes.to_string tail);
+      Imgmeta.Reader.close r)
+;;
+
+let test_reader_in_channel_read () =
+  with_temp_file "abcdef" (fun path ->
+    In_channel.with_open_bin path (fun ic ->
+      match Imgmeta.Reader.of_in_channel ic with
+      | Error _ -> Alcotest.fail "of_in_channel failed"
+      | Ok r ->
+        let chunk = Imgmeta.Reader.read r 3 in
+        Alcotest.(check string) "head" "abc" (Bytes.to_string chunk)))
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -75,6 +103,8 @@ let () =
         ; Alcotest.test_case "bytes read_at" `Quick test_reader_bytes_read_at
         ; Alcotest.test_case "bytes size" `Quick test_reader_bytes_size
         ; Alcotest.test_case "bytes truncated" `Quick test_reader_bytes_truncated
+        ; Alcotest.test_case "file read" `Quick test_reader_file_read
+        ; Alcotest.test_case "in_channel read" `Quick test_reader_in_channel_read
         ] )
     ]
 ;;
