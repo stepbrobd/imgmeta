@@ -209,6 +209,31 @@ let test_png_fixture () =
     Alcotest.(check int) "depth" 8 m.depth
 ;;
 
+let gif_header ~width ~height ~color_res =
+  let buf = Buffer.create 32 in
+  Buffer.add_string buf "GIF89a";
+  let dim = Bytes.create 4 in
+  Bytes.set_uint16_le dim 0 width;
+  Bytes.set_uint16_le dim 2 height;
+  Buffer.add_bytes buf dim;
+  let packed = ((color_res - 1) land 0b111) lsl 4 in
+  Buffer.add_char buf (Char.chr packed);
+  Buffer.add_char buf '\x00';
+  Buffer.add_char buf '\x00';
+  Buffer.to_bytes buf
+;;
+
+let test_gif_synthesized () =
+  let data = gif_header ~width:64 ~height:48 ~color_res:8 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Gif.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 64 m.width;
+    Alcotest.(check int) "height" 48 m.height;
+    Alcotest.(check int) "depth" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -240,5 +265,6 @@ let () =
         ; Alcotest.test_case "synthesized 16 bit rgba" `Quick test_png_synthesized_16bit
         ; Alcotest.test_case "fixture 320x320 rgba" `Quick test_png_fixture
         ] )
+    ; "gif", [ Alcotest.test_case "synthesized 64x48" `Quick test_gif_synthesized ]
     ]
 ;;
