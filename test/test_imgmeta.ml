@@ -234,6 +234,48 @@ let test_gif_synthesized () =
   | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
 ;;
 
+let jpeg_header ~width ~height ~precision =
+  let buf = Buffer.create 32 in
+  Buffer.add_string buf "\xff\xd8";
+  Buffer.add_string buf "\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00";
+  Buffer.add_string buf "\xff\xc0";
+  let len_bytes = Bytes.create 2 in
+  Bytes.set_uint16_be len_bytes 0 17;
+  Buffer.add_bytes buf len_bytes;
+  Buffer.add_char buf (Char.chr precision);
+  let dims = Bytes.create 4 in
+  Bytes.set_uint16_be dims 0 height;
+  Bytes.set_uint16_be dims 2 width;
+  Buffer.add_bytes buf dims;
+  Buffer.add_char buf '\x03';
+  for _ = 1 to 9 do
+    Buffer.add_char buf '\x00'
+  done;
+  Buffer.to_bytes buf
+;;
+
+let test_jpeg_synthesized () =
+  let data = jpeg_header ~width:320 ~height:240 ~precision:8 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Jpeg.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 320 m.width;
+    Alcotest.(check int) "height" 240 m.height;
+    Alcotest.(check int) "depth" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_jpeg_fixture () =
+  let data = load_bytes "fixture.jpeg" in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Jpeg.read_metadata r with
+  | Error e -> Alcotest.failf "fixture.jpeg failed %a" Imgmeta.pp_error e
+  | Ok m ->
+    Alcotest.(check int) "width" 320 m.width;
+    Alcotest.(check int) "height" 320 m.height;
+    Alcotest.(check int) "depth" 8 m.depth
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -266,5 +308,9 @@ let () =
         ; Alcotest.test_case "fixture 320x320 rgba" `Quick test_png_fixture
         ] )
     ; "gif", [ Alcotest.test_case "synthesized 64x48" `Quick test_gif_synthesized ]
+    ; ( "jpeg"
+      , [ Alcotest.test_case "synthesized 320x240" `Quick test_jpeg_synthesized
+        ; Alcotest.test_case "fixture 320x320 with exif" `Quick test_jpeg_fixture
+        ] )
     ]
 ;;
