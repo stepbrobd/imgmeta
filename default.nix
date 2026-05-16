@@ -1,5 +1,6 @@
 { lib
 , buildDunePackage
+, alcotest
 }:
 
 buildDunePackage (finalAttrs: {
@@ -13,11 +14,13 @@ buildDunePackage (finalAttrs: {
   src = with lib.fileset; toSource {
     root = ./.;
     fileset = unions [
+      ./lib
       ./dune-project
     ];
   };
 
   env.DUNE_CACHE = "disabled";
 
-  propagatedBuildInputs = [ ];
+  doCheck = true;
+  checkInputs = [ alcotest ];
 })

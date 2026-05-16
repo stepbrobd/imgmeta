@@ -1,0 +1,6 @@
+(library
+ (name imgmeta)
+ (public_name imgmeta)
+ (wrapped true))
+
+(include_subdirs qualified)
