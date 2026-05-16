@@ -89,6 +89,64 @@ let test_reader_in_channel_read () =
         Alcotest.(check string) "head" "abc" (Bytes.to_string chunk)))
 ;;
 
+let bytes_of_hex hex =
+  let clean = String.concat "" (String.split_on_char ' ' hex) in
+  let len = String.length clean / 2 in
+  let b = Bytes.create len in
+  for i = 0 to len - 1 do
+    let hi = clean.[i * 2] in
+    let lo = clean.[(i * 2) + 1] in
+    let v c =
+      match c with
+      | '0' .. '9' -> Char.code c - Char.code '0'
+      | 'a' .. 'f' -> Char.code c - Char.code 'a' + 10
+      | _ -> failwith "bad hex"
+    in
+    Bytes.set_uint8 b i ((v hi * 16) + v lo)
+  done;
+  b
+;;
+
+let check_magic name hex expected =
+  let b = bytes_of_hex hex in
+  Alcotest.(check (option string))
+    name
+    (Some (Imgmeta.format_to_string expected))
+    (Option.map Imgmeta.format_to_string (Imgmeta.Magic.of_bytes b))
+;;
+
+let test_magic_png () =
+  check_magic "png" "89 50 4e 47 0d 0a 1a 0a 00 00 00 0d 49 48 44 52" PNG
+;;
+
+let test_magic_jpeg () =
+  check_magic "jpeg" "ff d8 ff e0 00 10 4a 46 49 46 00 01 01 00 00 01" JPEG
+;;
+
+let test_magic_gif () =
+  check_magic "gif" "47 49 46 38 39 61 0a 00 0a 00 80 00 00 ff ff ff" GIF
+;;
+
+let test_magic_webp () =
+  check_magic "webp" "52 49 46 46 24 00 00 00 57 45 42 50 56 50 38 20" WebP
+;;
+
+let test_magic_heif () =
+  check_magic "heif" "00 00 00 18 66 74 79 70 68 65 69 63 00 00 00 00" HEIF
+;;
+
+let test_magic_avif () =
+  check_magic "avif" "00 00 00 18 66 74 79 70 61 76 69 66 00 00 00 00" AVIF
+;;
+
+let test_magic_unknown () =
+  let b = bytes_of_hex "00 11 22 33 44 55 66 77 88 99 aa bb cc dd ee ff" in
+  Alcotest.(check (option string))
+    "unknown returns none"
+    None
+    (Option.map Imgmeta.format_to_string (Imgmeta.Magic.of_bytes b))
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -105,6 +163,15 @@ let () =
         ; Alcotest.test_case "bytes truncated" `Quick test_reader_bytes_truncated
         ; Alcotest.test_case "file read" `Quick test_reader_file_read
         ; Alcotest.test_case "in_channel read" `Quick test_reader_in_channel_read
+        ] )
+    ; ( "magic"
+      , [ Alcotest.test_case "png" `Quick test_magic_png
+        ; Alcotest.test_case "jpeg" `Quick test_magic_jpeg
+        ; Alcotest.test_case "gif" `Quick test_magic_gif
+        ; Alcotest.test_case "webp" `Quick test_magic_webp
+        ; Alcotest.test_case "heif" `Quick test_magic_heif
+        ; Alcotest.test_case "avif" `Quick test_magic_avif
+        ; Alcotest.test_case "unknown" `Quick test_magic_unknown
         ] )
     ]
 ;;
