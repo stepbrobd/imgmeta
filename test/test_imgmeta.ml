@@ -31,6 +31,36 @@ let test_exception_carries_error () =
   Alcotest.(check bool) "raises and matches" true raised
 ;;
 
+let test_reader_bytes_read () =
+  let r = Imgmeta.Reader.of_bytes (Bytes.of_string "abcdef") in
+  let chunk = Imgmeta.Reader.read r 3 in
+  Alcotest.(check string) "first 3" "abc" (Bytes.to_string chunk);
+  Alcotest.(check int) "pos advanced" 3 (Imgmeta.Reader.pos r)
+;;
+
+let test_reader_bytes_read_at () =
+  let r = Imgmeta.Reader.of_bytes (Bytes.of_string "abcdef") in
+  let chunk = Imgmeta.Reader.read_at r ~pos:2 ~len:3 in
+  Alcotest.(check string) "from offset 2" "cde" (Bytes.to_string chunk)
+;;
+
+let test_reader_bytes_size () =
+  let r = Imgmeta.Reader.of_bytes (Bytes.of_string "abcdef") in
+  Alcotest.(check (option int)) "size" (Some 6) (Imgmeta.Reader.size r)
+;;
+
+let test_reader_bytes_truncated () =
+  let r = Imgmeta.Reader.of_bytes (Bytes.of_string "abc") in
+  let raised =
+    try
+      let _ = Imgmeta.Reader.read r 10 in
+      false
+    with
+    | Imgmeta_error Truncated -> true
+  in
+  Alcotest.(check bool) "raises truncated when over reading" true raised
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -39,6 +69,12 @@ let () =
         ; Alcotest.test_case "record fields" `Quick test_record_fields
         ; Alcotest.test_case "pp_error unknown_format" `Quick test_pp_error_unknown
         ; Alcotest.test_case "exception carries error" `Quick test_exception_carries_error
+        ] )
+    ; ( "reader"
+      , [ Alcotest.test_case "bytes read" `Quick test_reader_bytes_read
+        ; Alcotest.test_case "bytes read_at" `Quick test_reader_bytes_read_at
+        ; Alcotest.test_case "bytes size" `Quick test_reader_bytes_size
+        ; Alcotest.test_case "bytes truncated" `Quick test_reader_bytes_truncated
         ] )
     ]
 ;;
