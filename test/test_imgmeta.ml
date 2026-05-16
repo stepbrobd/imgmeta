@@ -493,6 +493,30 @@ let test_public_detect_format () =
     (Option.map Imgmeta.format_to_string (Imgmeta.detect_format data))
 ;;
 
+let equal_meta a b =
+  a.Imgmeta.format = b.Imgmeta.format
+  && a.width = b.width
+  && a.height = b.height
+  && a.depth = b.depth
+;;
+
+let load_three_from_path path =
+  let from_file = Imgmeta.of_file_exn path in
+  let from_bytes = Imgmeta.of_bytes_exn (load_bytes path) in
+  let from_chan = In_channel.with_open_bin path Imgmeta.of_in_channel_exn in
+  from_file, from_bytes, from_chan
+;;
+
+let check_three_equal path =
+  let a, b, c = load_three_from_path path in
+  Alcotest.(check bool) "file equals bytes" true (equal_meta a b);
+  Alcotest.(check bool) "file equals chan" true (equal_meta a c)
+;;
+
+let test_cross_source_png () = check_three_equal "fixture.png"
+let test_cross_source_jpeg () = check_three_equal "fixture.jpeg"
+let test_cross_source_heic () = check_three_equal "fixture.heic"
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -549,6 +573,11 @@ let () =
         ; Alcotest.test_case "of_file fixture png" `Quick test_public_of_file
         ; Alcotest.test_case "of_in_channel fixture heic" `Quick test_public_of_in_channel
         ; Alcotest.test_case "detect_format png" `Quick test_public_detect_format
+        ] )
+    ; ( "cross_source"
+      , [ Alcotest.test_case "png all three equal" `Quick test_cross_source_png
+        ; Alcotest.test_case "jpeg all three equal" `Quick test_cross_source_jpeg
+        ; Alcotest.test_case "heic all three equal" `Quick test_cross_source_heic
         ] )
     ]
 ;;
