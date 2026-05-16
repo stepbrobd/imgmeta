@@ -15,6 +15,7 @@ buildDunePackage (finalAttrs: {
     root = ./.;
     fileset = unions [
       ./lib
+      ./test
       ./dune-project
     ];
   };
