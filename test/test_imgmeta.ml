@@ -276,6 +276,72 @@ let test_jpeg_fixture () =
     Alcotest.(check int) "depth" 8 m.depth
 ;;
 
+let riff_header chunks =
+  let body = Buffer.create 64 in
+  Buffer.add_string body "WEBP";
+  List.iter
+    (fun (ty, data) ->
+       Buffer.add_string body ty;
+       let len = Bytes.create 4 in
+       Bytes.set_int32_le len 0 (Int32.of_int (Bytes.length data));
+       Buffer.add_bytes body len;
+       Buffer.add_bytes body data;
+       if Bytes.length data mod 2 = 1 then Buffer.add_char body '\x00')
+    chunks;
+  let out = Buffer.create 96 in
+  Buffer.add_string out "RIFF";
+  let size = Bytes.create 4 in
+  Bytes.set_int32_le size 0 (Int32.of_int (Buffer.length body));
+  Buffer.add_bytes out size;
+  Buffer.add_buffer out body;
+  Buffer.to_bytes out
+;;
+
+let webp_vp8x ~width ~height =
+  let body = Bytes.create 10 in
+  Bytes.fill body 0 10 '\x00';
+  Bytes.set_uint8 body 4 ((width - 1) land 0xff);
+  Bytes.set_uint8 body 5 (((width - 1) lsr 8) land 0xff);
+  Bytes.set_uint8 body 6 (((width - 1) lsr 16) land 0xff);
+  Bytes.set_uint8 body 7 ((height - 1) land 0xff);
+  Bytes.set_uint8 body 8 (((height - 1) lsr 8) land 0xff);
+  Bytes.set_uint8 body 9 (((height - 1) lsr 16) land 0xff);
+  riff_header [ "VP8X", body ]
+;;
+
+let webp_vp8l ~width ~height =
+  let body = Bytes.create 5 in
+  Bytes.set_uint8 body 0 0x2f;
+  let wm1 = width - 1 in
+  let hm1 = height - 1 in
+  Bytes.set_uint8 body 1 (wm1 land 0xff);
+  Bytes.set_uint8 body 2 ((wm1 lsr 8) land 0x3f lor ((hm1 land 0x03) lsl 6));
+  Bytes.set_uint8 body 3 ((hm1 lsr 2) land 0xff);
+  Bytes.set_uint8 body 4 ((hm1 lsr 10) land 0x0f);
+  riff_header [ "VP8L", body ]
+;;
+
+let test_webp_vp8x () =
+  let data = webp_vp8x ~width:512 ~height:256 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Webp.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 512 m.width;
+    Alcotest.(check int) "height" 256 m.height;
+    Alcotest.(check int) "depth" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_webp_vp8l () =
+  let data = webp_vp8l ~width:16 ~height:16 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Webp.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 16 m.width;
+    Alcotest.(check int) "height" 16 m.height
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -311,6 +377,10 @@ let () =
     ; ( "jpeg"
       , [ Alcotest.test_case "synthesized 320x240" `Quick test_jpeg_synthesized
         ; Alcotest.test_case "fixture 320x320 with exif" `Quick test_jpeg_fixture
+        ] )
+    ; ( "webp"
+      , [ Alcotest.test_case "synthesized vp8x 512x256" `Quick test_webp_vp8x
+        ; Alcotest.test_case "synthesized vp8l 16x16" `Quick test_webp_vp8l
         ] )
     ]
 ;;
