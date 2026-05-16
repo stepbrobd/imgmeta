@@ -449,6 +449,50 @@ let test_avif_synthesized () =
   | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
 ;;
 
+let test_public_of_bytes () =
+  let data = png_header ~width:10 ~height:20 ~depth:8 ~color_type:2 in
+  match Imgmeta.of_bytes data with
+  | Ok m -> Alcotest.(check int) "width" 10 m.width
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_public_of_bytes_exn_raises () =
+  let raised =
+    try
+      let _ = Imgmeta.of_bytes_exn (Bytes.of_string "garbage") in
+      false
+    with
+    | Imgmeta_error _ -> true
+  in
+  Alcotest.(check bool) "raises" true raised
+;;
+
+let test_public_of_file () =
+  match Imgmeta.of_file "fixture.png" with
+  | Ok m ->
+    Alcotest.(check int) "w" 320 m.width;
+    Alcotest.(check int) "h" 320 m.height;
+    Alcotest.(check int) "d" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_public_of_in_channel () =
+  In_channel.with_open_bin "fixture.heic" (fun ic ->
+    match Imgmeta.of_in_channel ic with
+    | Ok m ->
+      Alcotest.(check int) "w" 320 m.width;
+      Alcotest.(check int) "h" 320 m.height
+    | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e)
+;;
+
+let test_public_detect_format () =
+  let data = png_header ~width:1 ~height:1 ~depth:8 ~color_type:2 in
+  Alcotest.(check (option string))
+    "detects png"
+    (Some "png")
+    (Option.map Imgmeta.format_to_string (Imgmeta.detect_format data))
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -499,5 +543,12 @@ let () =
         ] )
     ; ( "avif"
       , [ Alcotest.test_case "synthesized 800x600 10bit" `Quick test_avif_synthesized ] )
+    ; ( "public"
+      , [ Alcotest.test_case "of_bytes png" `Quick test_public_of_bytes
+        ; Alcotest.test_case "of_bytes_exn raises" `Quick test_public_of_bytes_exn_raises
+        ; Alcotest.test_case "of_file fixture png" `Quick test_public_of_file
+        ; Alcotest.test_case "of_in_channel fixture heic" `Quick test_public_of_in_channel
+        ; Alcotest.test_case "detect_format png" `Quick test_public_detect_format
+        ] )
     ]
 ;;
