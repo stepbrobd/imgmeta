@@ -428,6 +428,27 @@ let test_heif_fixture () =
     Alcotest.(check int) "depth" 8 m.depth
 ;;
 
+let avif_file ~width ~height ~depth =
+  let ftyp = isobmff_box "ftyp" (Bytes.of_string "avif\x00\x00\x00\x00mif1") in
+  let ispe = isobmff_full_box "ispe" (ispe_body ~width ~height) in
+  let pixi = isobmff_full_box "pixi" (pixi_body ~depth) in
+  let ipco = isobmff_box "ipco" (Bytes.cat ispe pixi) in
+  let iprp = isobmff_box "iprp" ipco in
+  let meta = isobmff_full_box "meta" iprp in
+  Bytes.cat ftyp meta
+;;
+
+let test_avif_synthesized () =
+  let data = avif_file ~width:800 ~height:600 ~depth:10 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Avif.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 800 m.width;
+    Alcotest.(check int) "height" 600 m.height;
+    Alcotest.(check int) "depth" 10 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -476,5 +497,7 @@ let () =
       , [ Alcotest.test_case "synthesized 1920x1080 10bit" `Quick test_heif_synthesized
         ; Alcotest.test_case "fixture 320x320 8bit" `Quick test_heif_fixture
         ] )
+    ; ( "avif"
+      , [ Alcotest.test_case "synthesized 800x600 10bit" `Quick test_avif_synthesized ] )
     ]
 ;;
