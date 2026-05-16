@@ -342,6 +342,37 @@ let test_webp_vp8l () =
   | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
 ;;
 
+let isobmff_box ty body =
+  let buf = Buffer.create (8 + Bytes.length body) in
+  let len = Bytes.create 4 in
+  Bytes.set_int32_be len 0 (Int32.of_int (8 + Bytes.length body));
+  Buffer.add_bytes buf len;
+  Buffer.add_string buf ty;
+  Buffer.add_bytes buf body;
+  Buffer.to_bytes buf
+;;
+
+let test_isobmff_walk_top_level () =
+  let a = isobmff_box "ftyp" (Bytes.of_string "heic") in
+  let b = isobmff_box "free" (Bytes.of_string "xxx") in
+  let data = Bytes.cat a b in
+  let r = Imgmeta.Reader.of_bytes data in
+  let found = ref [] in
+  Imgmeta.Formats.Isobmff.walk_top r (fun box ->
+    found := box.Imgmeta.Formats.Isobmff.kind :: !found);
+  Alcotest.(check (list string)) "two boxes" [ "free"; "ftyp" ] !found
+;;
+
+let test_isobmff_find_top () =
+  let a = isobmff_box "ftyp" (Bytes.of_string "heic") in
+  let b = isobmff_box "free" (Bytes.of_string "xx") in
+  let data = Bytes.cat a b in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Isobmff.find_top r "free" with
+  | None -> Alcotest.fail "expected free box"
+  | Some box -> Alcotest.(check string) "found free" "free" box.kind
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -381,6 +412,10 @@ let () =
     ; ( "webp"
       , [ Alcotest.test_case "synthesized vp8x 512x256" `Quick test_webp_vp8x
         ; Alcotest.test_case "synthesized vp8l 16x16" `Quick test_webp_vp8l
+        ] )
+    ; ( "isobmff"
+      , [ Alcotest.test_case "walk top level" `Quick test_isobmff_walk_top_level
+        ; Alcotest.test_case "find top" `Quick test_isobmff_find_top
         ] )
     ]
 ;;
