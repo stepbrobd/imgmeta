@@ -33,7 +33,7 @@ let test_exception_carries_error () =
 
 let test_reader_bytes_read () =
   let r = Imgmeta.Reader.of_bytes (Bytes.of_string "abcdef") in
-  let chunk = Imgmeta.Reader.read r 3 in
+  let chunk = Imgmeta.Reader.read r ~len:3 in
   Alcotest.(check string) "first 3" "abc" (Bytes.to_string chunk);
   Alcotest.(check int) "pos advanced" 3 (Imgmeta.Reader.pos r)
 ;;
@@ -53,7 +53,7 @@ let test_reader_bytes_truncated () =
   let r = Imgmeta.Reader.of_bytes (Bytes.of_string "abc") in
   let raised =
     try
-      let _ = Imgmeta.Reader.read r 10 in
+      let _ = Imgmeta.Reader.read r ~len:10 in
       false
     with
     | Imgmeta_error Truncated -> true
@@ -72,7 +72,7 @@ let test_reader_file_read () =
     match Imgmeta.Reader.of_file path with
     | Error _ -> Alcotest.fail "of_file failed"
     | Ok r ->
-      let head = Imgmeta.Reader.read r 5 in
+      let head = Imgmeta.Reader.read r ~len:5 in
       Alcotest.(check string) "first 5" "hello" (Bytes.to_string head);
       let tail = Imgmeta.Reader.read_at r ~pos:6 ~len:5 in
       Alcotest.(check string) "tail" "world" (Bytes.to_string tail);
@@ -85,7 +85,7 @@ let test_reader_in_channel_read () =
       match Imgmeta.Reader.of_in_channel ic with
       | Error _ -> Alcotest.fail "of_in_channel failed"
       | Ok r ->
-        let chunk = Imgmeta.Reader.read r 3 in
+        let chunk = Imgmeta.Reader.read r ~len:3 in
         Alcotest.(check string) "head" "abc" (Bytes.to_string chunk)))
 ;;
 

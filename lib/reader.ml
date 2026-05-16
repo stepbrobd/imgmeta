@@ -57,7 +57,7 @@ let seek t p =
     r.cursor <- p
 ;;
 
-let read t len =
+let read t ~len =
   match t.b with
   | Bytes_b r ->
     let avail = Bytes.length r.data - r.pos in
