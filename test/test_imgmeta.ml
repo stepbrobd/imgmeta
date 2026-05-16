@@ -517,6 +517,34 @@ let test_cross_source_png () = check_three_equal "fixture.png"
 let test_cross_source_jpeg () = check_three_equal "fixture.jpeg"
 let test_cross_source_heic () = check_three_equal "fixture.heic"
 
+let expect_error name data =
+  match Imgmeta.of_bytes data with
+  | Ok _ -> Alcotest.failf "%s expected error but got ok" name
+  | Error _ -> ()
+;;
+
+let test_negative_unknown () =
+  expect_error "garbage" (Bytes.of_string "this is not an image at all")
+;;
+
+let test_negative_truncated_png () =
+  let data = png_header ~width:1 ~height:1 ~depth:8 ~color_type:2 in
+  let short = Bytes.sub data 0 10 in
+  expect_error "png truncated" short
+;;
+
+let test_negative_malformed_jpeg () =
+  expect_error "jpeg bad marker" (Bytes.of_string "\xff\xd8\xab\xcd")
+;;
+
+let test_negative_truncated_webp () =
+  expect_error "webp truncated" (Bytes.of_string "RIFF\x00")
+;;
+
+let test_negative_truncated_heif () =
+  expect_error "heif truncated" (Bytes.of_string "\x00\x00\x00\x18ftyphei")
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -578,6 +606,13 @@ let () =
       , [ Alcotest.test_case "png all three equal" `Quick test_cross_source_png
         ; Alcotest.test_case "jpeg all three equal" `Quick test_cross_source_jpeg
         ; Alcotest.test_case "heic all three equal" `Quick test_cross_source_heic
+        ] )
+    ; ( "negative"
+      , [ Alcotest.test_case "unknown garbage" `Quick test_negative_unknown
+        ; Alcotest.test_case "png truncated" `Quick test_negative_truncated_png
+        ; Alcotest.test_case "jpeg malformed marker" `Quick test_negative_malformed_jpeg
+        ; Alcotest.test_case "webp truncated" `Quick test_negative_truncated_webp
+        ; Alcotest.test_case "heif truncated" `Quick test_negative_truncated_heif
         ] )
     ]
 ;;
