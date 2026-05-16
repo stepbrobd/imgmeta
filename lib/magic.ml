@@ -1,6 +1,3 @@
-let png_sig = "\x89PNG\r\n\x1a\n"
-let jpeg_sig = "\xff\xd8\xff"
-
 let starts_with b prefix =
   let pn = String.length prefix in
   Bytes.length b >= pn && String.equal (Bytes.sub_string b 0 pn) prefix
@@ -17,9 +14,9 @@ let isobmff_brand b =
 ;;
 
 let of_bytes b : Types.format option =
-  if starts_with b png_sig
+  if starts_with b "\x89PNG\r\n\x1a\n"
   then Some PNG
-  else if starts_with b jpeg_sig
+  else if starts_with b "\xff\xd8\xff"
   then Some JPEG
   else if starts_with b "GIF87a" || starts_with b "GIF89a"
   then Some GIF
