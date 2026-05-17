@@ -28,7 +28,7 @@ let read_metadata r =
             + (Bytes.get_uint8 body 8 lsl 8)
             + (Bytes.get_uint8 body 9 lsl 16)
           in
-          Ok { Types.format = WebP; width = w; height = h; depth = 8 }
+          Ok { Types.format = WebP; width = w; height = h; depth = 8; orientation = 1 }
         | "VP8L" ->
           let body = Reader.read_at r ~pos:body_off ~len:5 in
           if Bytes.get_uint8 body 0 <> 0x2f
@@ -42,7 +42,7 @@ let read_metadata r =
             let h =
               1 + ((b2 lsr 6) land 0x3 lor (b3 lsl 2) lor ((b4 land 0x0f) lsl 10))
             in
-            Ok { Types.format = WebP; width = w; height = h; depth = 8 })
+            Ok { Types.format = WebP; width = w; height = h; depth = 8; orientation = 1 })
         | "VP8 " ->
           let body = Reader.read_at r ~pos:body_off ~len:10 in
           if
@@ -53,7 +53,7 @@ let read_metadata r =
           else (
             let w = Bytes.get_uint16_le body 6 land 0x3fff in
             let h = Bytes.get_uint16_le body 8 land 0x3fff in
-            Ok { Types.format = WebP; width = w; height = h; depth = 8 })
+            Ok { Types.format = WebP; width = w; height = h; depth = 8; orientation = 1 })
         | _ ->
           cursor := next;
           walk ()

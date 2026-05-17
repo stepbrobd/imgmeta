@@ -6,11 +6,12 @@ module Formats = Formats
 let pp fmt m =
   Format.fprintf
     fmt
-    "{format=%s width=%d height=%d depth=%d}"
+    "{format=%s width=%d height=%d depth=%d orientation=%d}"
     (format_to_string m.format)
     m.width
     m.height
     m.depth
+    m.orientation
 ;;
 
 let detect_format = Magic.of_bytes

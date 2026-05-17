@@ -45,7 +45,7 @@ let extract r ~format =
            | None -> 8
            | Some p -> read_pixi r p
          in
-         Ok { Types.format; width = w; height = h; depth })
+         Ok { Types.format; width = w; height = h; depth; orientation = 1 })
   with
   | Types.Imgmeta_error e -> Error e
 ;;

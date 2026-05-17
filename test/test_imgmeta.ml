@@ -8,10 +8,11 @@ let test_format_construction () =
 ;;
 
 let test_record_fields () =
-  let m = { format = PNG; width = 10; height = 20; depth = 8 } in
+  let m = { format = PNG; width = 10; height = 20; depth = 8; orientation = 1 } in
   Alcotest.(check int) "width" 10 m.width;
   Alcotest.(check int) "height" 20 m.height;
-  Alcotest.(check int) "depth" 8 m.depth
+  Alcotest.(check int) "depth" 8 m.depth;
+  Alcotest.(check int) "orientation" 1 m.orientation
 ;;
 
 let test_pp_error_unknown () =
@@ -498,6 +499,7 @@ let equal_meta a b =
   && a.width = b.width
   && a.height = b.height
   && a.depth = b.depth
+  && a.orientation = b.orientation
 ;;
 
 let load_three_from_path path =

@@ -11,6 +11,7 @@ type t =
   ; width : int
   ; height : int
   ; depth : int
+  ; orientation : int
   }
 
 type error =

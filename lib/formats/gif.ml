@@ -9,7 +9,7 @@ let read_metadata r =
       let height = Bytes.get_uint16_le head 8 in
       let packed = Bytes.get_uint8 head 10 in
       let depth = ((packed lsr 4) land 0b111) + 1 in
-      Ok { Types.format = GIF; width; height; depth })
+      Ok { Types.format = GIF; width; height; depth; orientation = 1 })
   with
   | Types.Imgmeta_error e -> Error e
 ;;

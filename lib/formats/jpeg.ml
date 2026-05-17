@@ -40,7 +40,7 @@ let read_metadata r =
             let depth = Bytes.get_uint8 body 0 in
             let height = Bytes.get_uint16_be body 1 in
             let width = Bytes.get_uint16_be body 3 in
-            Ok { Types.format = JPEG; width; height; depth })
+            Ok { Types.format = JPEG; width; height; depth; orientation = 1 })
           else if code = 0xd9 || code = 0xda
           then Error (Types.Malformed "reached eoi or sos before sof")
           else (

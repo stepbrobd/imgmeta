@@ -9,7 +9,7 @@ let read_metadata r =
       let width = Int32.to_int (Bytes.get_int32_be header 16) in
       let height = Int32.to_int (Bytes.get_int32_be header 20) in
       let depth = Bytes.get_uint8 header 24 in
-      Ok { Types.format = PNG; width; height; depth })
+      Ok { Types.format = PNG; width; height; depth; orientation = 1 })
   with
   | Types.Imgmeta_error e -> Error e
 ;;
