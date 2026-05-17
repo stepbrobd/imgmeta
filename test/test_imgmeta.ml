@@ -217,17 +217,19 @@ let test_magic_unknown () =
     (Option.map Imgmeta.format_to_string (Imgmeta.Magic.of_bytes b))
 ;;
 
+let png_chunk buf ty body =
+  let len = Bytes.length body in
+  let len_bytes = Bytes.create 4 in
+  Bytes.set_int32_be len_bytes 0 (Int32.of_int len);
+  Buffer.add_bytes buf len_bytes;
+  Buffer.add_string buf ty;
+  Buffer.add_bytes buf body;
+  Buffer.add_string buf "\x00\x00\x00\x00"
+;;
+
 let png_header ~width ~height ~depth ~color_type =
   let buf = Buffer.create 64 in
   Buffer.add_string buf "\x89PNG\r\n\x1a\n";
-  let chunk ty body =
-    let len = Bytes.length body in
-    let len_bytes = Bytes.create 4 in
-    Bytes.set_int32_be len_bytes 0 (Int32.of_int len);
-    Buffer.add_bytes buf len_bytes;
-    Buffer.add_string buf ty;
-    Buffer.add_bytes buf body
-  in
   let ihdr = Bytes.create 13 in
   Bytes.set_int32_be ihdr 0 (Int32.of_int width);
   Bytes.set_int32_be ihdr 4 (Int32.of_int height);
@@ -236,7 +238,23 @@ let png_header ~width ~height ~depth ~color_type =
   Bytes.set_uint8 ihdr 10 0;
   Bytes.set_uint8 ihdr 11 0;
   Bytes.set_uint8 ihdr 12 0;
-  chunk "IHDR" ihdr;
+  png_chunk buf "IHDR" ihdr;
+  Buffer.to_bytes buf
+;;
+
+let png_with_exif ~width ~height ~depth ~color_type ~orientation =
+  let buf = Buffer.create 96 in
+  Buffer.add_string buf "\x89PNG\r\n\x1a\n";
+  let ihdr = Bytes.create 13 in
+  Bytes.set_int32_be ihdr 0 (Int32.of_int width);
+  Bytes.set_int32_be ihdr 4 (Int32.of_int height);
+  Bytes.set_uint8 ihdr 8 depth;
+  Bytes.set_uint8 ihdr 9 color_type;
+  Bytes.set_uint8 ihdr 10 0;
+  Bytes.set_uint8 ihdr 11 0;
+  Bytes.set_uint8 ihdr 12 0;
+  png_chunk buf "IHDR" ihdr;
+  png_chunk buf "eXIf" (tiff_with_entries ~endian:`LE [ 0x0112, 3, 1, orientation ]);
   Buffer.to_bytes buf
 ;;
 
@@ -265,6 +283,28 @@ let test_png_synthesized_16bit () =
   let r = Imgmeta.Reader.of_bytes data in
   match Imgmeta.Formats.Png.read_metadata r with
   | Ok m -> Alcotest.(check int) "depth 16" 16 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_png_orientation_swap () =
+  let data = png_with_exif ~width:200 ~height:100 ~depth:8 ~color_type:2 ~orientation:6 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Png.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "swapped width" 100 m.width;
+    Alcotest.(check int) "swapped height" 200 m.height;
+    Alcotest.(check int) "orientation" 6 m.orientation
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_png_orientation_no_swap () =
+  let data = png_with_exif ~width:200 ~height:100 ~depth:8 ~color_type:2 ~orientation:3 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Png.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "unswapped width" 200 m.width;
+    Alcotest.(check int) "unswapped height" 100 m.height;
+    Alcotest.(check int) "orientation" 3 m.orientation
   | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
 ;;
 
@@ -646,6 +686,8 @@ let () =
       , [ Alcotest.test_case "synthesized 8 bit rgb" `Quick test_png_synthesized
         ; Alcotest.test_case "synthesized 16 bit rgba" `Quick test_png_synthesized_16bit
         ; Alcotest.test_case "fixture 320x320 rgba" `Quick test_png_fixture
+        ; Alcotest.test_case "orientation 6 swap" `Quick test_png_orientation_swap
+        ; Alcotest.test_case "orientation 3 no swap" `Quick test_png_orientation_no_swap
         ] )
     ; "gif", [ Alcotest.test_case "synthesized 64x48" `Quick test_gif_synthesized ]
     ; ( "jpeg"
