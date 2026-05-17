@@ -4,7 +4,7 @@
 (executables_implicit_empty_intf true)
 
 (name imgmeta)
-(version 2026.517.0)
+(version 2026.517.1)
 (license MIT)
 (authors "Yifei Sun <ysun@hey.com>")
 (maintainers "Yifei Sun <ysun@hey.com>")
