@@ -707,6 +707,38 @@ let test_heif_exif_item_swap () =
   | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
 ;;
 
+let heif_file_irot_and_exif ~width ~height ~depth ~irot ~exif_orientation =
+  let ftyp = isobmff_box "ftyp" (Bytes.of_string "heic\x00\x00\x00\x00mif1") in
+  let ispe = isobmff_full_box "ispe" (ispe_body ~width ~height) in
+  let pixi = isobmff_full_box "pixi" (pixi_body ~depth) in
+  let irot_box = isobmff_box "irot" (Bytes.make 1 (Char.chr (irot land 0x3))) in
+  let ipco = isobmff_box "ipco" (Bytes.cat (Bytes.cat ispe pixi) irot_box) in
+  let iprp = isobmff_box "iprp" ipco in
+  let iinf = isobmff_full_box "iinf" (iinf_body [ 2, "Exif", "Exif" ]) in
+  let tiff = tiff_with_entries ~endian:`LE [ 0x0112, 3, 1, exif_orientation ] in
+  let exif_payload = Bytes.cat (Bytes.create 4) tiff in
+  let exif_len = Bytes.length exif_payload in
+  let placeholder = isobmff_full_box "iloc" (iloc_body_v0 ~items:[ 2, 0, exif_len ]) in
+  let meta_without_iloc = Bytes.cat iinf iprp in
+  let meta_iloc_offset = Bytes.length ftyp + 8 + 4 + Bytes.length meta_without_iloc in
+  let exif_offset = meta_iloc_offset + Bytes.length placeholder in
+  let iloc = isobmff_full_box "iloc" (iloc_body_v0 ~items:[ 2, exif_offset, exif_len ]) in
+  let meta = isobmff_full_box "meta" (Bytes.cat meta_without_iloc iloc) in
+  Bytes.cat (Bytes.cat ftyp meta) exif_payload
+;;
+
+let test_heif_irot_wins_over_exif () =
+  let data =
+    heif_file_irot_and_exif ~width:1920 ~height:1080 ~depth:8 ~irot:2 ~exif_orientation:6
+  in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Heif.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "irot 2 wins not exif 6 width" 1920 m.width;
+    Alcotest.(check int) "irot 2 wins not exif 6 orientation" 3 m.orientation
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let test_heif_synthesized () =
   let data = heif_file ~width:1920 ~height:1080 ~depth:10 in
   let r = Imgmeta.Reader.of_bytes data in
@@ -827,6 +859,7 @@ let check_three_equal path =
 let test_cross_source_png () = check_three_equal "fixture.png"
 let test_cross_source_jpeg () = check_three_equal "fixture.jpeg"
 let test_cross_source_heic () = check_three_equal "fixture.heic"
+let test_cross_source_avif_rotated () = check_three_equal "fixture-rotated.avif"
 
 let expect_error name data =
   match Imgmeta.of_bytes data with
@@ -912,6 +945,7 @@ let () =
         ; Alcotest.test_case "irot 1 90 ccw swap" `Quick test_heif_irot_swap
         ; Alcotest.test_case "irot 2 180 no swap" `Quick test_heif_irot_180
         ; Alcotest.test_case "exif item swap" `Quick test_heif_exif_item_swap
+        ; Alcotest.test_case "irot wins over exif" `Quick test_heif_irot_wins_over_exif
         ] )
     ; ( "avif"
       , [ Alcotest.test_case "synthesized 800x600 10bit" `Quick test_avif_synthesized
@@ -939,6 +973,10 @@ let () =
       , [ Alcotest.test_case "png all three equal" `Quick test_cross_source_png
         ; Alcotest.test_case "jpeg all three equal" `Quick test_cross_source_jpeg
         ; Alcotest.test_case "heic all three equal" `Quick test_cross_source_heic
+        ; Alcotest.test_case
+            "rotated avif all three equal"
+            `Quick
+            test_cross_source_avif_rotated
         ] )
     ; ( "negative"
       , [ Alcotest.test_case "unknown garbage" `Quick test_negative_unknown
