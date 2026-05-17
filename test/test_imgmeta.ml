@@ -750,6 +750,15 @@ let test_avif_synthesized () =
   | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
 ;;
 
+let test_avif_rotated_fixture () =
+  match Imgmeta.of_file "fixture-rotated.avif" with
+  | Ok m ->
+    Alcotest.(check int) "display width" 4284 m.width;
+    Alcotest.(check int) "display height" 5712 m.height;
+    Alcotest.(check int) "orientation" 6 m.orientation
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let test_public_of_bytes () =
   let data = png_header ~width:10 ~height:20 ~depth:8 ~color_type:2 in
   match Imgmeta.of_bytes data with
@@ -905,7 +914,12 @@ let () =
         ; Alcotest.test_case "exif item swap" `Quick test_heif_exif_item_swap
         ] )
     ; ( "avif"
-      , [ Alcotest.test_case "synthesized 800x600 10bit" `Quick test_avif_synthesized ] )
+      , [ Alcotest.test_case "synthesized 800x600 10bit" `Quick test_avif_synthesized
+        ; Alcotest.test_case
+            "rotated fixture orientation 6"
+            `Quick
+            test_avif_rotated_fixture
+        ] )
     ; ( "exif"
       , [ Alcotest.test_case "le orientation 6" `Quick test_exif_orientation_le
         ; Alcotest.test_case "be orientation 8" `Quick test_exif_orientation_be

@@ -2,4 +2,4 @@
  (name test_imgmeta)
  (libraries imgmeta alcotest)
  (deps
-  (glob_files fixture.*)))
+  (glob_files fixture*)))
