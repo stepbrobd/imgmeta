@@ -108,6 +108,75 @@ let bytes_of_hex hex =
   b
 ;;
 
+let tiff_with_entries ~endian entries =
+  let n = List.length entries in
+  let buf = Bytes.create (8 + 2 + (12 * n) + 4) in
+  let set_u16 = if endian = `LE then Bytes.set_uint16_le else Bytes.set_uint16_be in
+  let set_u32 b o v =
+    if endian = `LE
+    then Bytes.set_int32_le b o (Int32.of_int v)
+    else Bytes.set_int32_be b o (Int32.of_int v)
+  in
+  Bytes.set_uint8 buf 0 (if endian = `LE then 0x49 else 0x4d);
+  Bytes.set_uint8 buf 1 (if endian = `LE then 0x49 else 0x4d);
+  set_u16 buf 2 0x002a;
+  set_u32 buf 4 8;
+  set_u16 buf 8 n;
+  List.iteri
+    (fun i (tag, ty, count, value_lo16) ->
+       let off = 10 + (i * 12) in
+       set_u16 buf off tag;
+       set_u16 buf (off + 2) ty;
+       set_u32 buf (off + 4) count;
+       set_u16 buf (off + 8) value_lo16;
+       set_u16 buf (off + 10) 0)
+    entries;
+  set_u32 buf (10 + (12 * n)) 0;
+  buf
+;;
+
+let test_exif_orientation_le () =
+  let tiff = tiff_with_entries ~endian:`LE [ 0x0112, 3, 1, 6 ] in
+  Alcotest.(check int) "le orientation 6" 6 (Imgmeta.Formats.Exif.parse_orientation tiff)
+;;
+
+let test_exif_orientation_be () =
+  let tiff = tiff_with_entries ~endian:`BE [ 0x0112, 3, 1, 8 ] in
+  Alcotest.(check int) "be orientation 8" 8 (Imgmeta.Formats.Exif.parse_orientation tiff)
+;;
+
+let test_exif_missing_orientation () =
+  let tiff = tiff_with_entries ~endian:`LE [ 0x0100, 3, 1, 256 ] in
+  Alcotest.(check int)
+    "missing tag returns 1"
+    1
+    (Imgmeta.Formats.Exif.parse_orientation tiff)
+;;
+
+let test_exif_invalid_magic () =
+  let tiff = tiff_with_entries ~endian:`LE [ 0x0112, 3, 1, 6 ] in
+  Bytes.set_uint8 tiff 2 0xff;
+  Alcotest.(check int)
+    "bad magic returns 1"
+    1
+    (Imgmeta.Formats.Exif.parse_orientation tiff)
+;;
+
+let test_exif_empty () =
+  Alcotest.(check int)
+    "empty returns 1"
+    1
+    (Imgmeta.Formats.Exif.parse_orientation Bytes.empty)
+;;
+
+let test_exif_out_of_range () =
+  let tiff = tiff_with_entries ~endian:`LE [ 0x0112, 3, 1, 9 ] in
+  Alcotest.(check int)
+    "value > 8 returns 1"
+    1
+    (Imgmeta.Formats.Exif.parse_orientation tiff)
+;;
+
 let check_magic name hex expected =
   let b = bytes_of_hex hex in
   Alcotest.(check (option string))
@@ -597,6 +666,14 @@ let () =
         ] )
     ; ( "avif"
       , [ Alcotest.test_case "synthesized 800x600 10bit" `Quick test_avif_synthesized ] )
+    ; ( "exif"
+      , [ Alcotest.test_case "le orientation 6" `Quick test_exif_orientation_le
+        ; Alcotest.test_case "be orientation 8" `Quick test_exif_orientation_be
+        ; Alcotest.test_case "missing tag" `Quick test_exif_missing_orientation
+        ; Alcotest.test_case "invalid magic" `Quick test_exif_invalid_magic
+        ; Alcotest.test_case "empty bytes" `Quick test_exif_empty
+        ; Alcotest.test_case "out of range" `Quick test_exif_out_of_range
+        ] )
     ; ( "public"
       , [ Alcotest.test_case "of_bytes png" `Quick test_public_of_bytes
         ; Alcotest.test_case "of_bytes_exn raises" `Quick test_public_of_bytes_exn_raises
