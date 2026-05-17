@@ -309,10 +309,10 @@ let test_png_orientation_no_swap () =
 ;;
 
 let test_png_fixture () =
-  let data = load_bytes "fixture.png" in
+  let data = load_bytes "fixtures/nix.png" in
   let r = Imgmeta.Reader.of_bytes data in
   match Imgmeta.Formats.Png.read_metadata r with
-  | Error e -> Alcotest.failf "fixture.png failed %a" Imgmeta.pp_error e
+  | Error e -> Alcotest.failf "fixtures/nix.png failed %a" Imgmeta.pp_error e
   | Ok m ->
     Alcotest.(check int) "width" 320 m.width;
     Alcotest.(check int) "height" 320 m.height;
@@ -424,10 +424,10 @@ let test_jpeg_synthesized () =
 ;;
 
 let test_jpeg_fixture () =
-  let data = load_bytes "fixture.jpeg" in
+  let data = load_bytes "fixtures/nix.jpeg" in
   let r = Imgmeta.Reader.of_bytes data in
   match Imgmeta.Formats.Jpeg.read_metadata r with
-  | Error e -> Alcotest.failf "fixture.jpeg failed %a" Imgmeta.pp_error e
+  | Error e -> Alcotest.failf "fixtures/nix.jpeg failed %a" Imgmeta.pp_error e
   | Ok m ->
     Alcotest.(check int) "width" 320 m.width;
     Alcotest.(check int) "height" 320 m.height;
@@ -751,10 +751,10 @@ let test_heif_synthesized () =
 ;;
 
 let test_heif_fixture () =
-  let data = load_bytes "fixture.heic" in
+  let data = load_bytes "fixtures/nix.heic" in
   let r = Imgmeta.Reader.of_bytes data in
   match Imgmeta.Formats.Heif.read_metadata r with
-  | Error e -> Alcotest.failf "fixture.heic failed %a" Imgmeta.pp_error e
+  | Error e -> Alcotest.failf "fixtures/nix.heic failed %a" Imgmeta.pp_error e
   | Ok m ->
     Alcotest.(check int) "width" 320 m.width;
     Alcotest.(check int) "height" 320 m.height;
@@ -783,7 +783,7 @@ let test_avif_synthesized () =
 ;;
 
 let test_avif_rotated_fixture () =
-  match Imgmeta.of_file "fixture-rotated.avif" with
+  match Imgmeta.of_file "fixtures/sandwich.avif" with
   | Ok m ->
     Alcotest.(check int) "display width" 4284 m.width;
     Alcotest.(check int) "display height" 5712 m.height;
@@ -810,7 +810,7 @@ let test_public_of_bytes_exn_raises () =
 ;;
 
 let test_public_of_file () =
-  match Imgmeta.of_file "fixture.png" with
+  match Imgmeta.of_file "fixtures/nix.png" with
   | Ok m ->
     Alcotest.(check int) "w" 320 m.width;
     Alcotest.(check int) "h" 320 m.height;
@@ -819,7 +819,7 @@ let test_public_of_file () =
 ;;
 
 let test_public_of_in_channel () =
-  In_channel.with_open_bin "fixture.heic" (fun ic ->
+  In_channel.with_open_bin "fixtures/nix.heic" (fun ic ->
     match Imgmeta.of_in_channel ic with
     | Ok m ->
       Alcotest.(check int) "w" 320 m.width;
@@ -856,10 +856,10 @@ let check_three_equal path =
   Alcotest.(check bool) "file equals chan" true (equal_meta a c)
 ;;
 
-let test_cross_source_png () = check_three_equal "fixture.png"
-let test_cross_source_jpeg () = check_three_equal "fixture.jpeg"
-let test_cross_source_heic () = check_three_equal "fixture.heic"
-let test_cross_source_avif_rotated () = check_three_equal "fixture-rotated.avif"
+let test_cross_source_png () = check_three_equal "fixtures/nix.png"
+let test_cross_source_jpeg () = check_three_equal "fixtures/nix.jpeg"
+let test_cross_source_heic () = check_three_equal "fixtures/nix.heic"
+let test_cross_source_avif_rotated () = check_three_equal "fixtures/sandwich.avif"
 
 let expect_error name data =
   match Imgmeta.of_bytes data with

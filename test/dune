@@ -1,5 +1,5 @@
 (test
- (name test_imgmeta)
+ (name test)
  (libraries imgmeta alcotest)
  (deps
-  (glob_files fixture*)))
+  (glob_files fixtures/*)))
