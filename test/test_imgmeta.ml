@@ -628,6 +628,85 @@ let test_heif_irot_180 () =
   | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
 ;;
 
+let iinf_body entries =
+  let inner = Buffer.create 16 in
+  let count_bytes = Bytes.create 2 in
+  Bytes.set_uint16_be count_bytes 0 (List.length entries);
+  Buffer.add_bytes inner count_bytes;
+  List.iter
+    (fun (id, ty, name) ->
+       let payload = Buffer.create 16 in
+       let v_and_flags = Bytes.create 4 in
+       Bytes.set_uint8 v_and_flags 0 2;
+       Buffer.add_bytes payload v_and_flags;
+       let id_bytes = Bytes.create 2 in
+       Bytes.set_uint16_be id_bytes 0 id;
+       Buffer.add_bytes payload id_bytes;
+       Buffer.add_bytes payload (Bytes.create 2);
+       Buffer.add_string payload ty;
+       Buffer.add_string payload name;
+       Buffer.add_char payload '\x00';
+       Buffer.add_bytes inner (isobmff_box "infe" (Buffer.to_bytes payload)))
+    entries;
+  Buffer.to_bytes inner
+;;
+
+let iloc_body_v0 ~items =
+  let buf = Buffer.create 32 in
+  Buffer.add_char buf (Char.chr 0x44);
+  Buffer.add_char buf '\x00';
+  let count_bytes = Bytes.create 2 in
+  Bytes.set_uint16_be count_bytes 0 (List.length items);
+  Buffer.add_bytes buf count_bytes;
+  List.iter
+    (fun (id, offset, length) ->
+       let id_bytes = Bytes.create 2 in
+       Bytes.set_uint16_be id_bytes 0 id;
+       Buffer.add_bytes buf id_bytes;
+       Buffer.add_bytes buf (Bytes.create 2);
+       let ec_bytes = Bytes.create 2 in
+       Bytes.set_uint16_be ec_bytes 0 1;
+       Buffer.add_bytes buf ec_bytes;
+       let off_bytes = Bytes.create 4 in
+       Bytes.set_int32_be off_bytes 0 (Int32.of_int offset);
+       Buffer.add_bytes buf off_bytes;
+       let len_bytes = Bytes.create 4 in
+       Bytes.set_int32_be len_bytes 0 (Int32.of_int length);
+       Buffer.add_bytes buf len_bytes)
+    items;
+  Buffer.to_bytes buf
+;;
+
+let heif_file_with_exif_item ~width ~height ~depth ~orientation =
+  let ftyp = isobmff_box "ftyp" (Bytes.of_string "heic\x00\x00\x00\x00mif1") in
+  let ispe = isobmff_full_box "ispe" (ispe_body ~width ~height) in
+  let pixi = isobmff_full_box "pixi" (pixi_body ~depth) in
+  let ipco = isobmff_box "ipco" (Bytes.cat ispe pixi) in
+  let iprp = isobmff_box "iprp" ipco in
+  let iinf = isobmff_full_box "iinf" (iinf_body [ 2, "Exif", "Exif" ]) in
+  let tiff = tiff_with_entries ~endian:`LE [ 0x0112, 3, 1, orientation ] in
+  let exif_payload = Bytes.cat (Bytes.create 4) tiff in
+  let exif_len = Bytes.length exif_payload in
+  let placeholder = isobmff_full_box "iloc" (iloc_body_v0 ~items:[ 2, 0, exif_len ]) in
+  let meta_without_iloc = Bytes.cat iinf iprp in
+  let meta_iloc_offset = Bytes.length ftyp + 8 + 4 + Bytes.length meta_without_iloc in
+  let exif_offset = meta_iloc_offset + Bytes.length placeholder in
+  let iloc = isobmff_full_box "iloc" (iloc_body_v0 ~items:[ 2, exif_offset, exif_len ]) in
+  let meta = isobmff_full_box "meta" (Bytes.cat meta_without_iloc iloc) in
+  Bytes.cat (Bytes.cat ftyp meta) exif_payload
+;;
+
+let test_heif_exif_item_swap () =
+  let data = heif_file_with_exif_item ~width:1920 ~height:1080 ~depth:8 ~orientation:6 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Heif.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "swapped width" 1080 m.width;
+    Alcotest.(check int) "swapped height" 1920 m.height;
+    Alcotest.(check int) "orientation" 6 m.orientation
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let test_heif_synthesized () =
   let data = heif_file ~width:1920 ~height:1080 ~depth:10 in
   let r = Imgmeta.Reader.of_bytes data in
@@ -823,6 +902,7 @@ let () =
         ; Alcotest.test_case "fixture 320x320 8bit" `Quick test_heif_fixture
         ; Alcotest.test_case "irot 1 90 ccw swap" `Quick test_heif_irot_swap
         ; Alcotest.test_case "irot 2 180 no swap" `Quick test_heif_irot_180
+        ; Alcotest.test_case "exif item swap" `Quick test_heif_exif_item_swap
         ] )
     ; ( "avif"
       , [ Alcotest.test_case "synthesized 800x600 10bit" `Quick test_avif_synthesized ] )

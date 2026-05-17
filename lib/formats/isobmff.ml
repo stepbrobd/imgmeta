@@ -95,3 +95,93 @@ let find_descendant r parent kind =
   dive parent;
   !result
 ;;
+
+let read_uint r ~pos ~size =
+  if size = 0
+  then 0
+  else (
+    let b = Reader.read_at r ~pos ~len:size in
+    let v = ref 0 in
+    for i = 0 to size - 1 do
+      v := (!v lsl 8) lor Bytes.get_uint8 b i
+    done;
+    !v)
+;;
+
+let find_exif_item_id r meta =
+  let result = ref None in
+  match find_descendant r meta "iinf" with
+  | None -> None
+  | Some iinf ->
+    let cursor = ref (iinf.body_off + 4) in
+    let version_byte = Reader.read_at r ~pos:iinf.body_off ~len:1 in
+    let version = Bytes.get_uint8 version_byte 0 in
+    let entry_count_size = if version = 0 then 2 else 4 in
+    let entry_count = read_uint r ~pos:!cursor ~size:entry_count_size in
+    cursor := !cursor + entry_count_size;
+    let limit = iinf.body_off + iinf.body_len in
+    let n = ref 0 in
+    while !result = None && !n < entry_count && !cursor < limit do
+      match read_box r ~pos:!cursor ~limit with
+      | None -> cursor := limit
+      | Some infe ->
+        let infe_ver_bytes = Reader.read_at r ~pos:infe.body_off ~len:1 in
+        let infe_ver = Bytes.get_uint8 infe_ver_bytes 0 in
+        let id_size = if infe_ver >= 3 then 4 else 2 in
+        let id = read_uint r ~pos:(infe.body_off + 4) ~size:id_size in
+        let type_off = infe.body_off + 4 + id_size + 2 in
+        let ty = Bytes.to_string (Reader.read_at r ~pos:type_off ~len:4) in
+        if String.equal ty "Exif" then result := Some id;
+        cursor := infe.pos + infe.size;
+        incr n
+    done;
+    !result
+;;
+
+let find_item_extent r meta ~item_id =
+  match find_descendant r meta "iloc" with
+  | None -> None
+  | Some iloc ->
+    let header = Reader.read_at r ~pos:iloc.body_off ~len:6 in
+    let version = Bytes.get_uint8 header 0 in
+    let packed1 = Bytes.get_uint8 header 4 in
+    let offset_size = (packed1 lsr 4) land 0xf in
+    let length_size = packed1 land 0xf in
+    let packed2 = Bytes.get_uint8 header 5 in
+    let base_offset_size = (packed2 lsr 4) land 0xf in
+    let index_size = if version >= 1 then packed2 land 0xf else 0 in
+    let count_size = if version = 2 then 4 else 2 in
+    let cursor = ref (iloc.body_off + 6) in
+    let item_count = read_uint r ~pos:!cursor ~size:count_size in
+    cursor := !cursor + count_size;
+    let id_size = if version = 2 then 4 else 2 in
+    let limit = iloc.body_off + iloc.body_len in
+    let result = ref None in
+    let i = ref 0 in
+    while !result = None && !i < item_count && !cursor < limit do
+      let id = read_uint r ~pos:!cursor ~size:id_size in
+      cursor := !cursor + id_size;
+      if version = 1 || version = 2 then cursor := !cursor + 2;
+      cursor := !cursor + 2;
+      let base_offset = read_uint r ~pos:!cursor ~size:base_offset_size in
+      cursor := !cursor + base_offset_size;
+      let extent_count = read_uint r ~pos:!cursor ~size:2 in
+      cursor := !cursor + 2;
+      if id = item_id && extent_count >= 1
+      then (
+        if (version = 1 || version = 2) && index_size > 0
+        then cursor := !cursor + index_size;
+        let extent_offset = read_uint r ~pos:!cursor ~size:offset_size in
+        cursor := !cursor + offset_size;
+        let extent_length = read_uint r ~pos:!cursor ~size:length_size in
+        result := Some (base_offset + extent_offset, extent_length))
+      else
+        for _ = 1 to extent_count do
+          if (version = 1 || version = 2) && index_size > 0
+          then cursor := !cursor + index_size;
+          cursor := !cursor + offset_size + length_size
+        done;
+      incr i
+    done;
+    !result
+;;

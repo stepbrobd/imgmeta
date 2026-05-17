@@ -31,6 +31,24 @@ let irot_to_exif = function
   | _ -> 1
 ;;
 
+let read_exif_item r meta =
+  match Isobmff.find_exif_item_id r meta with
+  | None -> 1
+  | Some id ->
+    (match Isobmff.find_item_extent r meta ~item_id:id with
+     | None -> 1
+     | Some (offset, length) ->
+       if length < 4
+       then 1
+       else (
+         let payload = Reader.read_at r ~pos:offset ~len:length in
+         let header_offset = Int32.to_int (Bytes.get_int32_be payload 0) in
+         let skip = 4 + header_offset in
+         if skip >= length
+         then 1
+         else Exif.parse_orientation (Bytes.sub payload skip (length - skip))))
+;;
+
 let extract r ~format =
   try
     match Isobmff.find_top r "meta" with
@@ -66,7 +84,9 @@ let extract r ~format =
          let orientation =
            match !irot with
            | Some b -> irot_to_exif (read_irot r b)
-           | None -> 1
+           | None ->
+             (try read_exif_item r meta with
+              | Types.Imgmeta_error _ -> 1)
          in
          let w, h = if orientation >= 5 && orientation <= 8 then h, w else w, h in
          Ok { Types.format; width = w; height = h; depth; orientation })
