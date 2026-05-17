@@ -364,6 +364,54 @@ let jpeg_header ~width ~height ~precision =
   Buffer.to_bytes buf
 ;;
 
+let jpeg_with_exif ~width ~height ~precision ~orientation =
+  let buf = Buffer.create 128 in
+  Buffer.add_string buf "\xff\xd8";
+  let exif_tiff = tiff_with_entries ~endian:`LE [ 0x0112, 3, 1, orientation ] in
+  let body = Bytes.cat (Bytes.of_string "Exif\x00\x00") exif_tiff in
+  let app1_len = 2 + Bytes.length body in
+  Buffer.add_string buf "\xff\xe1";
+  let len_bytes = Bytes.create 2 in
+  Bytes.set_uint16_be len_bytes 0 app1_len;
+  Buffer.add_bytes buf len_bytes;
+  Buffer.add_bytes buf body;
+  Buffer.add_string buf "\xff\xc0";
+  let sof_len = Bytes.create 2 in
+  Bytes.set_uint16_be sof_len 0 17;
+  Buffer.add_bytes buf sof_len;
+  Buffer.add_char buf (Char.chr precision);
+  let dims = Bytes.create 4 in
+  Bytes.set_uint16_be dims 0 height;
+  Bytes.set_uint16_be dims 2 width;
+  Buffer.add_bytes buf dims;
+  Buffer.add_char buf '\x03';
+  for _ = 1 to 9 do
+    Buffer.add_char buf '\x00'
+  done;
+  Buffer.to_bytes buf
+;;
+
+let test_jpeg_orientation_swap () =
+  let data = jpeg_with_exif ~width:320 ~height:240 ~precision:8 ~orientation:6 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Jpeg.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "swapped width" 240 m.width;
+    Alcotest.(check int) "swapped height" 320 m.height;
+    Alcotest.(check int) "orientation" 6 m.orientation
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_jpeg_orientation_no_swap () =
+  let data = jpeg_with_exif ~width:320 ~height:240 ~precision:8 ~orientation:2 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Jpeg.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "unswapped width" 320 m.width;
+    Alcotest.(check int) "orientation" 2 m.orientation
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let test_jpeg_synthesized () =
   let data = jpeg_header ~width:320 ~height:240 ~precision:8 in
   let r = Imgmeta.Reader.of_bytes data in
@@ -693,6 +741,8 @@ let () =
     ; ( "jpeg"
       , [ Alcotest.test_case "synthesized 320x240" `Quick test_jpeg_synthesized
         ; Alcotest.test_case "fixture 320x320 with exif" `Quick test_jpeg_fixture
+        ; Alcotest.test_case "orientation 6 swap" `Quick test_jpeg_orientation_swap
+        ; Alcotest.test_case "orientation 2 no swap" `Quick test_jpeg_orientation_no_swap
         ] )
     ; ( "webp"
       , [ Alcotest.test_case "synthesized vp8x 512x256" `Quick test_webp_vp8x
