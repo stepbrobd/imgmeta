@@ -596,6 +596,38 @@ let heif_file ~width ~height ~depth =
   Bytes.cat ftyp meta
 ;;
 
+let heif_file_with_irot ~width ~height ~depth ~irot =
+  let ftyp = isobmff_box "ftyp" (Bytes.of_string "heic\x00\x00\x00\x00mif1") in
+  let ispe = isobmff_full_box "ispe" (ispe_body ~width ~height) in
+  let pixi = isobmff_full_box "pixi" (pixi_body ~depth) in
+  let irot_box = isobmff_box "irot" (Bytes.make 1 (Char.chr (irot land 0x3))) in
+  let ipco = isobmff_box "ipco" (Bytes.cat (Bytes.cat ispe pixi) irot_box) in
+  let iprp = isobmff_box "iprp" ipco in
+  let meta = isobmff_full_box "meta" iprp in
+  Bytes.cat ftyp meta
+;;
+
+let test_heif_irot_swap () =
+  let data = heif_file_with_irot ~width:1920 ~height:1080 ~depth:8 ~irot:1 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Heif.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "swapped width" 1080 m.width;
+    Alcotest.(check int) "swapped height" 1920 m.height;
+    Alcotest.(check int) "orientation" 8 m.orientation
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_heif_irot_180 () =
+  let data = heif_file_with_irot ~width:1920 ~height:1080 ~depth:8 ~irot:2 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Heif.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "unswapped width" 1920 m.width;
+    Alcotest.(check int) "orientation" 3 m.orientation
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let test_heif_synthesized () =
   let data = heif_file ~width:1920 ~height:1080 ~depth:10 in
   let r = Imgmeta.Reader.of_bytes data in
@@ -789,6 +821,8 @@ let () =
     ; ( "heif"
       , [ Alcotest.test_case "synthesized 1920x1080 10bit" `Quick test_heif_synthesized
         ; Alcotest.test_case "fixture 320x320 8bit" `Quick test_heif_fixture
+        ; Alcotest.test_case "irot 1 90 ccw swap" `Quick test_heif_irot_swap
+        ; Alcotest.test_case "irot 2 180 no swap" `Quick test_heif_irot_180
         ] )
     ; ( "avif"
       , [ Alcotest.test_case "synthesized 800x600 10bit" `Quick test_avif_synthesized ] )

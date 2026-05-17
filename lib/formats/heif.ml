@@ -15,6 +15,22 @@ let read_pixi r (box : Isobmff.box) =
     Bytes.get_uint8 depths 0)
 ;;
 
+let read_irot r (box : Isobmff.box) =
+  if box.body_len < 1
+  then 0
+  else (
+    let body = Reader.read_at r ~pos:box.body_off ~len:1 in
+    Bytes.get_uint8 body 0 land 0x3)
+;;
+
+let irot_to_exif = function
+  | 0 -> 1
+  | 1 -> 8
+  | 2 -> 3
+  | 3 -> 6
+  | _ -> 1
+;;
+
 let extract r ~format =
   try
     match Isobmff.find_top r "meta" with
@@ -22,6 +38,7 @@ let extract r ~format =
     | Some meta ->
       let ispe = ref None in
       let pixi = ref None in
+      let irot = ref None in
       let rec scan (box : Isobmff.box) =
         let walk =
           if box.kind = "meta"
@@ -32,6 +49,7 @@ let extract r ~format =
           match child.kind with
           | "ispe" -> if !ispe = None then ispe := Some child
           | "pixi" -> if !pixi = None then pixi := Some child
+          | "irot" -> if !irot = None then irot := Some child
           | "iprp" | "ipco" -> scan child
           | _ -> ())
       in
@@ -45,7 +63,13 @@ let extract r ~format =
            | None -> 8
            | Some p -> read_pixi r p
          in
-         Ok { Types.format; width = w; height = h; depth; orientation = 1 })
+         let orientation =
+           match !irot with
+           | Some b -> irot_to_exif (read_irot r b)
+           | None -> 1
+         in
+         let w, h = if orientation >= 5 && orientation <= 8 then h, w else w, h in
+         Ok { Types.format; width = w; height = h; depth; orientation })
   with
   | Types.Imgmeta_error e -> Error e
 ;;
