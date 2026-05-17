@@ -455,16 +455,27 @@ let riff_header chunks =
   Buffer.to_bytes out
 ;;
 
-let webp_vp8x ~width ~height =
+let webp_vp8x_body ~width ~height ~flags =
   let body = Bytes.create 10 in
   Bytes.fill body 0 10 '\x00';
+  Bytes.set_uint8 body 0 flags;
   Bytes.set_uint8 body 4 ((width - 1) land 0xff);
   Bytes.set_uint8 body 5 (((width - 1) lsr 8) land 0xff);
   Bytes.set_uint8 body 6 (((width - 1) lsr 16) land 0xff);
   Bytes.set_uint8 body 7 ((height - 1) land 0xff);
   Bytes.set_uint8 body 8 (((height - 1) lsr 8) land 0xff);
   Bytes.set_uint8 body 9 (((height - 1) lsr 16) land 0xff);
-  riff_header [ "VP8X", body ]
+  body
+;;
+
+let webp_vp8x ~width ~height =
+  riff_header [ "VP8X", webp_vp8x_body ~width ~height ~flags:0 ]
+;;
+
+let webp_vp8x_with_exif ~width ~height ~orientation =
+  let vp8x = webp_vp8x_body ~width ~height ~flags:0x08 in
+  let exif = tiff_with_entries ~endian:`LE [ 0x0112, 3, 1, orientation ] in
+  riff_header [ "VP8X", vp8x; "EXIF", exif ]
 ;;
 
 let webp_vp8l ~width ~height =
@@ -487,6 +498,27 @@ let test_webp_vp8x () =
     Alcotest.(check int) "width" 512 m.width;
     Alcotest.(check int) "height" 256 m.height;
     Alcotest.(check int) "depth" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_webp_orientation_swap () =
+  let data = webp_vp8x_with_exif ~width:512 ~height:256 ~orientation:6 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Webp.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "swapped width" 256 m.width;
+    Alcotest.(check int) "swapped height" 512 m.height;
+    Alcotest.(check int) "orientation" 6 m.orientation
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_webp_orientation_no_swap () =
+  let data = webp_vp8x_with_exif ~width:512 ~height:256 ~orientation:2 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Webp.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "unswapped width" 512 m.width;
+    Alcotest.(check int) "orientation" 2 m.orientation
   | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
 ;;
 
@@ -747,6 +779,8 @@ let () =
     ; ( "webp"
       , [ Alcotest.test_case "synthesized vp8x 512x256" `Quick test_webp_vp8x
         ; Alcotest.test_case "synthesized vp8l 16x16" `Quick test_webp_vp8l
+        ; Alcotest.test_case "orientation 6 swap" `Quick test_webp_orientation_swap
+        ; Alcotest.test_case "orientation 2 no swap" `Quick test_webp_orientation_no_swap
         ] )
     ; ( "isobmff"
       , [ Alcotest.test_case "walk top level" `Quick test_isobmff_walk_top_level
