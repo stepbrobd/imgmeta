@@ -1,5 +1,10 @@
 # imgmeta
 
+Binary Cache:
+
+- Cache: <https://cache.ysun.co>
+- Key: `cache.ysun.co-1:WxPYwT5g3kt9XhUhHPpNLZKI9HIOsVVAuqSHpok8Qt4=`
+
 Metadata reader for PNG, JPEG, GIF, WebP, HEIF, and AVIF. Reads "just enough"
 bytes to extract dimensions, depth, and orientation without decoding the image.
 
