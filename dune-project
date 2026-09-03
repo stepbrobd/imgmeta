@@ -1,6 +1,6 @@
 (lang dune 3.21)
 
-(generate_opam_files false)
+(generate_opam_files true)
 (executables_implicit_empty_intf true)
 
 (name imgmeta)
