@@ -75,3 +75,10 @@ compatible brand list, and returns `None` for unrecognized inputs:
 ```ocaml
 Imgmeta.detect_format : bytes -> format option
 ```
+
+To test with coverage:
+
+```sh
+dune runtest --instrument-with bisect_ppx
+bisect-ppx-report summary
+```
