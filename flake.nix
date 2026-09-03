@@ -21,9 +21,10 @@
           nixpkgs-fmt
         ] ++ (with ocamlPackages; [
           bisect_ppx
-          ppxlib
+          dune-release
           ocaml-lsp
           ocamlformat
+          ppxlib
           utop
         ]);
       };
