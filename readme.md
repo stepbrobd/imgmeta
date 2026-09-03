@@ -5,8 +5,9 @@ Binary Cache:
 - Cache: <https://cache.ysun.co>
 - Key: `cache.ysun.co-1:WxPYwT5g3kt9XhUhHPpNLZKI9HIOsVVAuqSHpok8Qt4=`
 
-Metadata reader for PNG, JPEG, GIF, WebP, HEIF, and AVIF. Reads "just enough"
-bytes to extract dimensions, depth, and orientation without decoding the image.
+Metadata reader for PNG, JPEG, GIF, WebP, HEIF, AVIF, TIFF, JPEG XL, BMP, ICO,
+and QOI. Reads "just enough" bytes to extract dimensions, depth, and orientation
+without decoding the image.
 
 Put this in dune:
 
@@ -36,7 +37,8 @@ You get:
 
 ```ocaml
 type t = {
-  format      : format;  (* PNG | JPEG | GIF | WebP | HEIF | AVIF *)
+  format      : format;  (* PNG | JPEG | GIF | WebP | HEIF | AVIF   *)
+                         (* | TIFF | JXL | BMP | ICO | QOI          *)
   width       : int;     (* display width  (post-rotation)        *)
   height      : int;     (* display height (post-rotation)        *)
   depth       : int;     (* bits per channel                      *)
@@ -59,8 +61,16 @@ type error =
   | Io_error of string
 ```
 
-Format detection sniffs the first 16 bytes, returns `None` for unrecognized
-inputs:
+`depth` is bits per channel. BMP and ICO count bits per pixel, which is mapped
+to 8 for the packed truecolour depths and reported unchanged for indexed images.
+A TIFF-based raw file reports what IFD0 describes, which for some camera raws is
+a reduced-size image rather than the full frame.
+
+`of_in_channel` accepts a non-seekable channel such as a pipe, reading ahead
+only as far as the metadata requires.
+
+Format detection sniffs up to the first 64 bytes, enough to read the ISOBMFF
+compatible brand list, and returns `None` for unrecognized inputs:
 
 ```ocaml
 Imgmeta.detect_format : bytes -> format option
