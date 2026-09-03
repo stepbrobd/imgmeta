@@ -937,6 +937,58 @@ let test_hardening_webp_negative_chunk_length () =
   | Error _ -> ()
 ;;
 
+(* a length from the file used to reach Bytes.sub and Bytes.create unchecked and
+   raise Invalid_argument out of an API that returns a result *)
+let test_hardening_png_negative_exif_length () =
+  let data =
+    png_with_raw_chunk ~ty:"eXIf" ~declared_len:(-1) ~payload:(String.make 16 '\x00')
+  in
+  let outcome =
+    try `Returned (Imgmeta.of_bytes data) with
+    | e -> `Raised (Printexc.to_string e)
+  in
+  match outcome with
+  | `Raised msg -> Alcotest.failf "of_bytes raised %s" msg
+  | `Returned (Error _) -> ()
+  | `Returned (Ok m) -> Alcotest.(check int) "width still read" 8 m.width
+;;
+
+let test_hardening_png_oversized_exif_length () =
+  let data =
+    png_with_raw_chunk
+      ~ty:"eXIf"
+      ~declared_len:(256 * 1024 * 1024)
+      ~payload:(String.make 16 '\x00')
+  in
+  let outcome =
+    try `Returned (Imgmeta.of_bytes data) with
+    | e -> `Raised (Printexc.to_string e)
+  in
+  match outcome with
+  | `Raised msg -> Alcotest.failf "of_bytes raised %s" msg
+  | `Returned (Error _) -> ()
+  | `Returned (Ok m) ->
+    Alcotest.(check int) "width still read" 8 m.width;
+    Alcotest.(check int) "orientation falls back" 1 m.orientation
+;;
+
+let test_public_of_in_channel_pipe () =
+  let read_fd, write_fd = Unix.pipe () in
+  let data = png_header ~width:64 ~height:32 ~depth:8 ~color_type:2 in
+  let oc = Unix.out_channel_of_descr write_fd in
+  Out_channel.output_bytes oc data;
+  Out_channel.close oc;
+  let ic = Unix.in_channel_of_descr read_fd in
+  Fun.protect
+    ~finally:(fun () -> In_channel.close ic)
+    (fun () ->
+       match Imgmeta.of_in_channel ic with
+       | Ok m ->
+         Alcotest.(check int) "width over a pipe" 64 m.width;
+         Alcotest.(check int) "height over a pipe" 32 m.height
+       | Error e -> Alcotest.failf "non-seekable channel %a" Imgmeta.pp_error e)
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -1016,6 +1068,10 @@ let () =
         ; Alcotest.test_case "of_file fixture png" `Quick test_public_of_file
         ; Alcotest.test_case "of_in_channel fixture heic" `Quick test_public_of_in_channel
         ; Alcotest.test_case "detect_format png" `Quick test_public_detect_format
+        ; Alcotest.test_case
+            "of_in_channel over a pipe"
+            `Quick
+            test_public_of_in_channel_pipe
         ] )
     ; ( "cross_source"
       , [ Alcotest.test_case "png all three equal" `Quick test_cross_source_png
@@ -1042,6 +1098,14 @@ let () =
             "webp negative chunk length"
             `Quick
             test_hardening_webp_negative_chunk_length
+        ; Alcotest.test_case
+            "png negative exif length"
+            `Quick
+            test_hardening_png_negative_exif_length
+        ; Alcotest.test_case
+            "png oversized exif length"
+            `Quick
+            test_hardening_png_oversized_exif_length
         ] )
     ]
 ;;
