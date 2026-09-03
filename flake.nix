@@ -2,8 +2,8 @@
   outputs = { self, nixpkgs, parts, systems } @ inputs: parts.lib.mkFlake { inherit inputs; } {
     systems = import systems;
 
-    flake.overlays.default = final: prev: {
-      ocamlPackages = prev.ocaml-ng.ocamlPackages.overrideScope (ocamlFinal: ocamlPrev: {
+    flake.overlays.default = _: prev: {
+      ocamlPackages = prev.ocaml-ng.ocamlPackages.overrideScope (ocamlFinal: _: {
         imgmeta = ocamlFinal.callPackage ./default.nix { };
       });
     };
@@ -17,8 +17,11 @@
       devShells.default = pkgs.mkShell {
         inputsFrom = with self'.packages; [ default ];
         packages = with pkgs; [
+          deno
           nixpkgs-fmt
         ] ++ (with ocamlPackages; [
+          bisect_ppx
+          ppxlib
           ocaml-lsp
           ocamlformat
           utop
@@ -29,6 +32,7 @@
         pushd "$(${lib.getExe pkgs.git} rev-parse --show-toplevel)" > /dev/null
         set -eoux pipefail
         shopt -s globstar
+        ${lib.getExe pkgs.deno} fmt **/*.md **/*.yaml
         ${lib.getExe pkgs.nixpkgs-fmt} .
         ${lib.getExe pkgs.ocamlPackages.dune_3} fmt
         popd

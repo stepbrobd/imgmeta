@@ -3,7 +3,7 @@
 , alcotest
 }:
 
-buildDunePackage (finalAttrs: {
+buildDunePackage {
   pname = "imgmeta";
   version = with lib; pipe ./dune-project [
     readFile
@@ -24,4 +24,4 @@ buildDunePackage (finalAttrs: {
 
   doCheck = true;
   checkInputs = [ alcotest ];
-})
+}
