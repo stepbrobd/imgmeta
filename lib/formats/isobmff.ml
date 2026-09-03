@@ -189,3 +189,53 @@ let find_item_extent r meta ~item_id =
     done;
     !result
 ;;
+
+let full_box_header r box =
+  let b = Reader.read_at r ~pos:box.body_off ~len:4 in
+  let flags =
+    (Bytes.get_uint8 b 1 lsl 16) lor (Bytes.get_uint8 b 2 lsl 8) lor Bytes.get_uint8 b 3
+  in
+  Bytes.get_uint8 b 0, flags
+;;
+
+let find_primary_item_id r meta =
+  match find_descendant r meta "pitm" with
+  | None -> None
+  | Some pitm ->
+    let version, _ = full_box_header r pitm in
+    let size = if version = 0 then 2 else 4 in
+    Some (read_uint r ~pos:(pitm.body_off + 4) ~size)
+;;
+
+(* the returned indices are 1 based into the ipco child list, in the order the
+   file associates them with the item *)
+let find_property_indices r meta ~item_id =
+  match find_descendant r meta "ipma" with
+  | None -> []
+  | Some ipma ->
+    let version, flags = full_box_header r ipma in
+    let id_size = if version < 1 then 2 else 4 in
+    let index_size = if flags land 1 = 1 then 2 else 1 in
+    let mask = if index_size = 1 then 0x7f else 0x7fff in
+    let limit = ipma.body_off + ipma.body_len in
+    let cursor = ref (ipma.body_off + 4) in
+    let entry_count = read_uint r ~pos:!cursor ~size:4 in
+    cursor := !cursor + 4;
+    let found = ref [] in
+    let i = ref 0 in
+    while !found = [] && !i < entry_count && !cursor < limit do
+      let id = read_uint r ~pos:!cursor ~size:id_size in
+      cursor := !cursor + id_size;
+      let n = read_uint r ~pos:!cursor ~size:1 in
+      cursor := !cursor + 1;
+      let acc = ref [] in
+      for k = 0 to n - 1 do
+        let v = read_uint r ~pos:(!cursor + (k * index_size)) ~size:index_size in
+        acc := (v land mask) :: !acc
+      done;
+      cursor := !cursor + (n * index_size);
+      if id = item_id then found := List.rev !acc;
+      incr i
+    done;
+    !found
+;;

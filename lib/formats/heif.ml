@@ -49,40 +49,56 @@ let read_exif_item r meta =
          else Exif.parse_orientation (Bytes.sub payload skip (length - skip))))
 ;;
 
+let ipco_children r meta =
+  match Isobmff.find_descendant r meta "ipco" with
+  | None -> [||]
+  | Some ipco ->
+    let acc = ref [] in
+    Isobmff.walk_children r ipco (fun b -> acc := b :: !acc);
+    Array.of_list (List.rev !acc)
+;;
+
+(* properties belong to an item. pitm and ipma decide which ispe, pixi and irot
+   describe the image the file is about. taking the first of each kind
+   returns a thumbnail's dimensions whenever one is listed ahead of the primary
+   item. files that associate nothing fall back to every property in order,
+   which is what a single item file needs *)
+let primary_properties r meta =
+  let children = ipco_children r meta in
+  let indices =
+    match Isobmff.find_primary_item_id r meta with
+    | None -> []
+    | Some id -> Isobmff.find_property_indices r meta ~item_id:id
+  in
+  match indices with
+  | [] -> Array.to_list children
+  | _ ->
+    List.filter_map
+      (fun i ->
+         if i >= 1 && i <= Array.length children then Some children.(i - 1) else None)
+      indices
+;;
+
 let extract r ~format =
   try
     match Isobmff.find_top r "meta" with
     | None -> Error (Types.Malformed "missing meta box")
     | Some meta ->
-      let ispe = ref None in
-      let pixi = ref None in
-      let irot = ref None in
-      let rec scan (box : Isobmff.box) =
-        let walk =
-          if box.kind = "meta"
-          then Isobmff.walk_children_full r box
-          else Isobmff.walk_children r box
-        in
-        walk (fun child ->
-          match child.kind with
-          | "ispe" -> if !ispe = None then ispe := Some child
-          | "pixi" -> if !pixi = None then pixi := Some child
-          | "irot" -> if !irot = None then irot := Some child
-          | "iprp" | "ipco" -> scan child
-          | _ -> ())
+      let properties = primary_properties r meta in
+      let pick kind =
+        List.find_opt (fun (b : Isobmff.box) -> String.equal b.kind kind) properties
       in
-      scan meta;
-      (match !ispe with
+      (match pick "ispe" with
        | None -> Error (Types.Malformed "missing ispe box")
        | Some i ->
          let w, h = read_ispe r i in
          let depth =
-           match !pixi with
+           match pick "pixi" with
            | None -> 8
            | Some p -> read_pixi r p
          in
          let orientation =
-           match !irot with
+           match pick "irot" with
            | Some b -> irot_to_exif (read_irot r b)
            | None ->
              (try read_exif_item r meta with

@@ -1028,6 +1028,55 @@ let test_magic_heif_compatible_brand () =
     (Option.map Imgmeta.format_to_string (Imgmeta.Magic.of_bytes data))
 ;;
 
+let pitm_body ~item_id =
+  let b = Bytes.create 2 in
+  Bytes.set_uint16_be b 0 item_id;
+  b
+;;
+
+let ipma_body ~item_id ~indices =
+  let buf = Buffer.create 16 in
+  let count = Bytes.create 4 in
+  Bytes.set_int32_be count 0 1l;
+  Buffer.add_bytes buf count;
+  let id = Bytes.create 2 in
+  Bytes.set_uint16_be id 0 item_id;
+  Buffer.add_bytes buf id;
+  Buffer.add_char buf (Char.chr (List.length indices));
+  List.iter (fun i -> Buffer.add_char buf (Char.chr i)) indices;
+  Buffer.to_bytes buf
+;;
+
+(* a thumbnail listed ahead of the primary item is exactly the shape that made
+   the first ispe under ipco the wrong answer *)
+let heif_file_with_thumbnail ~thumb ~primary ~depth =
+  let ftyp = ftyp_box ~major:"heic" ~compatible:[ "mif1"; "heic" ] in
+  let tw, th = thumb in
+  let pw, ph = primary in
+  let ispe_thumb = isobmff_full_box "ispe" (ispe_body ~width:tw ~height:th) in
+  let ispe_primary = isobmff_full_box "ispe" (ispe_body ~width:pw ~height:ph) in
+  let pixi = isobmff_full_box "pixi" (pixi_body ~depth) in
+  let ipco =
+    isobmff_box "ipco" (Bytes.concat Bytes.empty [ ispe_thumb; ispe_primary; pixi ])
+  in
+  let ipma = isobmff_full_box "ipma" (ipma_body ~item_id:2 ~indices:[ 0x82; 0x03 ]) in
+  let iprp = isobmff_box "iprp" (Bytes.cat ipco ipma) in
+  let pitm = isobmff_full_box "pitm" (pitm_body ~item_id:2) in
+  let meta = isobmff_full_box "meta" (Bytes.cat pitm iprp) in
+  Bytes.cat ftyp meta
+;;
+
+let test_heif_ipma_selects_primary_item () =
+  let data = heif_file_with_thumbnail ~thumb:(160, 120) ~primary:(4032, 3024) ~depth:8 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Heif.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "primary width not the thumbnail" 4032 m.width;
+    Alcotest.(check int) "primary height not the thumbnail" 3024 m.height;
+    Alcotest.(check int) "depth" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -1093,6 +1142,10 @@ let () =
         ; Alcotest.test_case "irot 2 180 no swap" `Quick test_heif_irot_180
         ; Alcotest.test_case "exif item swap" `Quick test_heif_exif_item_swap
         ; Alcotest.test_case "irot wins over exif" `Quick test_heif_irot_wins_over_exif
+        ; Alcotest.test_case
+            "ipma selects the primary item"
+            `Quick
+            test_heif_ipma_selects_primary_item
         ] )
     ; ( "avif"
       , [ Alcotest.test_case "synthesized 800x600 10bit" `Quick test_avif_synthesized

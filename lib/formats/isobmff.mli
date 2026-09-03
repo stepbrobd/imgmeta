@@ -13,3 +13,5 @@ val find_top : Reader.t -> string -> box option
 val find_descendant : Reader.t -> box -> string -> box option
 val find_exif_item_id : Reader.t -> box -> int option
 val find_item_extent : Reader.t -> box -> item_id:int -> (int * int) option
+val find_primary_item_id : Reader.t -> box -> int option
+val find_property_indices : Reader.t -> box -> item_id:int -> int list
