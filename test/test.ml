@@ -1077,6 +1077,28 @@ let test_heif_ipma_selects_primary_item () =
   | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
 ;;
 
+let webp_vp8_lossy ~width ~height =
+  let body = Bytes.create 10 in
+  Bytes.fill body 0 10 '\x00';
+  Bytes.set_uint8 body 3 0x9d;
+  Bytes.set_uint8 body 4 0x01;
+  Bytes.set_uint8 body 5 0x2a;
+  Bytes.set_uint16_le body 6 (width land 0x3fff);
+  Bytes.set_uint16_le body 8 (height land 0x3fff);
+  riff_header [ "VP8 ", body ]
+;;
+
+let test_webp_vp8_lossy () =
+  let data = webp_vp8_lossy ~width:320 ~height:240 in
+  let r = Imgmeta.Reader.of_bytes data in
+  match Imgmeta.Formats.Webp.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 320 m.width;
+    Alcotest.(check int) "height" 240 m.height;
+    Alcotest.(check int) "depth" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -1130,6 +1152,7 @@ let () =
         ; Alcotest.test_case "synthesized vp8l 16x16" `Quick test_webp_vp8l
         ; Alcotest.test_case "orientation 6 swap" `Quick test_webp_orientation_swap
         ; Alcotest.test_case "orientation 2 no swap" `Quick test_webp_orientation_no_swap
+        ; Alcotest.test_case "synthesized vp8 lossy 320x240" `Quick test_webp_vp8_lossy
         ] )
     ; ( "isobmff"
       , [ Alcotest.test_case "walk top level" `Quick test_isobmff_walk_top_level
