@@ -1007,6 +1007,27 @@ let test_hardening_of_file_survives_bad_length () =
        | `Returned _ -> ())
 ;;
 
+let ftyp_box ~major ~compatible =
+  Bytes.of_string (major ^ "\x00\x00\x00\x00" ^ String.concat "" compatible)
+  |> isobmff_box "ftyp"
+;;
+
+let test_magic_avif_compatible_brand () =
+  let data = ftyp_box ~major:"mif1" ~compatible:[ "mif1"; "avif"; "miaf" ] in
+  Alcotest.(check (option string))
+    "avif named only in the compatible brands"
+    (Some "avif")
+    (Option.map Imgmeta.format_to_string (Imgmeta.Magic.of_bytes data))
+;;
+
+let test_magic_heif_compatible_brand () =
+  let data = ftyp_box ~major:"mif1" ~compatible:[ "mif1"; "heic" ] in
+  Alcotest.(check (option string))
+    "heif without an avif brand"
+    (Some "heif")
+    (Option.map Imgmeta.format_to_string (Imgmeta.Magic.of_bytes data))
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -1032,6 +1053,14 @@ let () =
         ; Alcotest.test_case "heif" `Quick test_magic_heif
         ; Alcotest.test_case "avif" `Quick test_magic_avif
         ; Alcotest.test_case "unknown" `Quick test_magic_unknown
+        ; Alcotest.test_case
+            "avif via compatible brand"
+            `Quick
+            test_magic_avif_compatible_brand
+        ; Alcotest.test_case
+            "heif via compatible brand"
+            `Quick
+            test_magic_heif_compatible_brand
         ] )
     ; ( "png"
       , [ Alcotest.test_case "synthesized 8 bit rgb" `Quick test_png_synthesized
