@@ -1341,6 +1341,25 @@ let check_jxl name hex =
   | Error e -> Alcotest.failf "%s %a" name Imgmeta.pp_error e
 ;;
 
+(* an animation sets extra_fields, which puts the intrinsic size, preview and
+   animation headers between the size header and the bit depth. cjxl 0.12.0
+   output for a three frame 120x60 animation, truncated to the header window *)
+let jxl_animation_hex =
+  "ff 0a d8 71 41 00 12 8a 4b 02 00 13 50 01 10 00 24 01 67 13 28 01 00 50 a1 32 ca b8 \
+   c1 cb b9 9e 2f 3f 74 58 4c db b8 ce d0 56 db 16 96 24 8a 8c 63 93 74 02 87 90 02 3b \
+   10 27 4e 8c 71 e2 4c 0c"
+;;
+
+let test_jxl_animation_reaches_bit_depth () =
+  let r = Imgmeta.Reader.of_bytes (bytes_of_hex jxl_animation_hex) in
+  match Imgmeta.Formats.Jxl.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 120 m.width;
+    Alcotest.(check int) "height" 60 m.height;
+    Alcotest.(check int) "depth read past the optional headers" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
 let test_jxl_bare_codestream () = check_jxl "bare codestream" jxl_raw_hex
 let test_jxl_container () = check_jxl "container" jxl_container_hex
 
@@ -1501,6 +1520,10 @@ let () =
     ; ( "jxl"
       , [ Alcotest.test_case "bare codestream 96x48" `Quick test_jxl_bare_codestream
         ; Alcotest.test_case "isobmff container 96x48" `Quick test_jxl_container
+        ; Alcotest.test_case
+            "animation reaches the bit depth"
+            `Quick
+            test_jxl_animation_reaches_bit_depth
         ] )
     ; ( "bmp"
       , [ Alcotest.test_case "info header 640x400 24bpp" `Quick test_bmp_info_header

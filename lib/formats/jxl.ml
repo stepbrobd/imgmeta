@@ -55,15 +55,45 @@ let read_bit_depth t =
   if read_bool t then read_u32 t float_depths else read_u32 t integer_depths
 ;;
 
-(* only the two shapes that reach the bit depth without an intervening optional
-   header are decoded. a richer header keeps the eight bit default, which is
-   what every jpeg xl written from an ordinary photograph carries *)
+let preview_div8_options = [ `Const 16; `Const 32; `Bits (5, 1); `Bits (9, 33) ]
+let preview_options = [ `Bits (6, 1); `Bits (8, 65); `Bits (10, 321); `Bits (12, 1345) ]
+
+(* shaped like the size header, with its own field widths *)
+let skip_preview_header t =
+  let options = if read_bool t then preview_div8_options else preview_options in
+  ignore (read_u32 t options : int);
+  if read_bits t 3 = 0 then ignore (read_u32 t options : int)
+;;
+
+let tps_numerator_options = [ `Const 100; `Const 1000; `Bits (10, 1); `Bits (30, 1) ]
+let tps_denominator_options = [ `Const 1; `Const 1001; `Bits (8, 1); `Bits (10, 1) ]
+let num_loops_options = [ `Const 0; `Bits (3, 0); `Bits (16, 0); `Bits (32, 0) ]
+
+let skip_animation_header t =
+  ignore (read_u32 t tps_numerator_options : int);
+  ignore (read_u32 t tps_denominator_options : int);
+  ignore (read_u32 t num_loops_options : int);
+  ignore (read_bool t : bool)
+;;
+
+(* the bit depth sits after the optional headers rather than before them, which
+   means reaching it requires walking past whichever of them are present *)
 let read_image_metadata t =
   if read_bool t
   then 8, 1
-  else if not (read_bool t)
-  then read_bit_depth t, 1
-  else 8, read_bits t 3 + 1
+  else (
+    let orientation =
+      if not (read_bool t)
+      then 1
+      else (
+        let orientation = read_bits t 3 + 1 in
+        if read_bool t then ignore (read_size_header t : int * int);
+        if read_bool t then skip_preview_header t;
+        if read_bool t then skip_animation_header t;
+        orientation)
+    in
+    let depth = read_bit_depth t in
+    depth, orientation)
 ;;
 
 let signature = "\xff\x0a"
