@@ -5,6 +5,11 @@ type format =
   | WebP
   | HEIF
   | AVIF
+  | TIFF
+  | JXL
+  | BMP
+  | ICO
+  | QOI
 
 type t =
   { format : format
@@ -29,6 +34,11 @@ let format_to_string = function
   | WebP -> "webp"
   | HEIF -> "heif"
   | AVIF -> "avif"
+  | TIFF -> "tiff"
+  | JXL -> "jxl"
+  | BMP -> "bmp"
+  | ICO -> "ico"
+  | QOI -> "qoi"
 ;;
 
 let pp_error fmt = function

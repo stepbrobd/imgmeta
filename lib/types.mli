@@ -5,6 +5,11 @@ type format =
   | WebP
   | HEIF
   | AVIF
+  | TIFF
+  | JXL
+  | BMP
+  | ICO
+  | QOI
 
 type t =
   { format : format

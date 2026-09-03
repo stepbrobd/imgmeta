@@ -37,6 +37,20 @@ let isobmff_brands b =
     four b ~at:8 :: compatible 16 [])
 ;;
 
+let jxl_container = "\x00\x00\x00\x0cJXL \r\n\x87\n"
+
+(* four near zero bytes are a weak signature, and a directory with no entry is
+   not an icon, which rules out most of the false positives *)
+let is_ico b =
+  Bytes.length b >= 6
+  && String.equal (Bytes.sub_string b 0 4) "\x00\x00\x01\x00"
+  && Bytes.get_uint16_le b 4 >= 1
+;;
+
+let is_tiff b =
+  Bytes.length b >= 8 && (starts_with b "II\x2a\x00" || starts_with b "MM\x00\x2a")
+;;
+
 let of_bytes b : Types.format option =
   if starts_with b "\x89PNG\r\n\x1a\n"
   then Some PNG
@@ -47,6 +61,16 @@ let of_bytes b : Types.format option =
   else if
     starts_with b "RIFF" && Bytes.length b >= 12 && String.equal (four b ~at:8) "WEBP"
   then Some WebP
+  else if starts_with b "\xff\x0a" || starts_with b jxl_container
+  then Some JXL
+  else if starts_with b "qoif"
+  then Some QOI
+  else if is_tiff b
+  then Some TIFF
+  else if starts_with b "BM"
+  then Some BMP
+  else if is_ico b
+  then Some ICO
   else (
     let brands = isobmff_brands b in
     let any set = List.exists (fun brand -> List.mem brand set) brands in

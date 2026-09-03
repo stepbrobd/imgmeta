@@ -2,9 +2,9 @@ open Imgmeta
 
 let test_format_construction () =
   Alcotest.(check int)
-    "six format constructors"
-    6
-    (List.length [ PNG; JPEG; GIF; WebP; HEIF; AVIF ])
+    "eleven format constructors"
+    11
+    (List.length [ PNG; JPEG; GIF; WebP; HEIF; AVIF; TIFF; JXL; BMP; ICO; QOI ])
 ;;
 
 let test_record_fields () =
@@ -1099,6 +1099,278 @@ let test_webp_vp8_lossy () =
   | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
 ;;
 
+let tiff_type_short = 3
+let tiff_type_long = 4
+
+(* entries are (tag, type, count, value). a SHORT value sits in the first two
+   bytes of the four byte field under both byte orders *)
+let tiff_file ~endian ~entries ~trailing =
+  let n = List.length entries in
+  let head_len = 8 + 2 + (n * 12) + 4 in
+  let buf = Bytes.make (head_len + Bytes.length trailing) '\x00' in
+  let set_u16 = if endian = `LE then Bytes.set_uint16_le else Bytes.set_uint16_be in
+  let set_u32 b o v =
+    if endian = `LE
+    then Bytes.set_int32_le b o (Int32.of_int v)
+    else Bytes.set_int32_be b o (Int32.of_int v)
+  in
+  Bytes.blit_string (if endian = `LE then "II" else "MM") 0 buf 0 2;
+  set_u16 buf 2 0x002a;
+  set_u32 buf 4 8;
+  set_u16 buf 8 n;
+  List.iteri
+    (fun i (tag, ty, count, value) ->
+       let off = 10 + (i * 12) in
+       set_u16 buf off tag;
+       set_u16 buf (off + 2) ty;
+       set_u32 buf (off + 4) count;
+       if ty = tiff_type_short
+       then set_u16 buf (off + 8) value
+       else set_u32 buf (off + 8) value)
+    entries;
+  set_u32 buf (10 + (n * 12)) 0;
+  Bytes.blit trailing 0 buf head_len (Bytes.length trailing);
+  buf
+;;
+
+let tiff_simple ~endian ~width ~height ~bits =
+  tiff_file
+    ~endian
+    ~entries:
+      [ 0x0100, tiff_type_long, 1, width
+      ; 0x0101, tiff_type_long, 1, height
+      ; 0x0102, tiff_type_short, 1, bits
+      ]
+    ~trailing:Bytes.empty
+;;
+
+let test_tiff_little_endian () =
+  let r =
+    Imgmeta.Reader.of_bytes (tiff_simple ~endian:`LE ~width:640 ~height:400 ~bits:8)
+  in
+  match Imgmeta.Formats.Tiff.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 640 m.width;
+    Alcotest.(check int) "height" 400 m.height;
+    Alcotest.(check int) "depth" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_tiff_big_endian () =
+  let r =
+    Imgmeta.Reader.of_bytes (tiff_simple ~endian:`BE ~width:1024 ~height:768 ~bits:16)
+  in
+  match Imgmeta.Formats.Tiff.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 1024 m.width;
+    Alcotest.(check int) "height" 768 m.height;
+    Alcotest.(check int) "depth" 16 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+(* three samples do not fit the value field, which then holds an offset. this is
+   what an ordinary rgb tiff writes *)
+let test_tiff_out_of_line_bits_per_sample () =
+  let trailing = Bytes.create 6 in
+  List.iter (fun i -> Bytes.set_uint16_le trailing (i * 2) 16) [ 0; 1; 2 ];
+  let entries =
+    [ 0x0100, tiff_type_long, 1, 640
+    ; 0x0101, tiff_type_long, 1, 400
+    ; 0x0102, tiff_type_short, 3, 8 + 2 + (3 * 12) + 4
+    ]
+  in
+  let r = Imgmeta.Reader.of_bytes (tiff_file ~endian:`LE ~entries ~trailing) in
+  match Imgmeta.Formats.Tiff.read_metadata r with
+  | Ok m -> Alcotest.(check int) "depth from the out of line array" 16 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_tiff_orientation_swap () =
+  let entries =
+    [ 0x0100, tiff_type_long, 1, 400
+    ; 0x0101, tiff_type_long, 1, 640
+    ; 0x0102, tiff_type_short, 1, 8
+    ; 0x0112, tiff_type_short, 1, 6
+    ]
+  in
+  let r =
+    Imgmeta.Reader.of_bytes (tiff_file ~endian:`LE ~entries ~trailing:Bytes.empty)
+  in
+  match Imgmeta.Formats.Tiff.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "swapped width" 640 m.width;
+    Alcotest.(check int) "swapped height" 400 m.height;
+    Alcotest.(check int) "orientation" 6 m.orientation
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let bmp_info ~width ~height ~bits =
+  let buf = Bytes.make 54 '\x00' in
+  Bytes.blit_string "BM" 0 buf 0 2;
+  Bytes.set_int32_le buf 2 (Int32.of_int 54);
+  Bytes.set_int32_le buf 10 (Int32.of_int 54);
+  Bytes.set_int32_le buf 14 (Int32.of_int 40);
+  Bytes.set_int32_le buf 18 (Int32.of_int width);
+  Bytes.set_int32_le buf 22 (Int32.of_int height);
+  Bytes.set_uint16_le buf 26 1;
+  Bytes.set_uint16_le buf 28 bits;
+  buf
+;;
+
+let bmp_core ~width ~height ~bits =
+  let buf = Bytes.make 26 '\x00' in
+  Bytes.blit_string "BM" 0 buf 0 2;
+  Bytes.set_int32_le buf 2 (Int32.of_int 26);
+  Bytes.set_int32_le buf 10 (Int32.of_int 26);
+  Bytes.set_int32_le buf 14 (Int32.of_int 12);
+  Bytes.set_uint16_le buf 18 width;
+  Bytes.set_uint16_le buf 20 height;
+  Bytes.set_uint16_le buf 22 1;
+  Bytes.set_uint16_le buf 24 bits;
+  buf
+;;
+
+let test_bmp_info_header () =
+  let r = Imgmeta.Reader.of_bytes (bmp_info ~width:640 ~height:400 ~bits:24) in
+  match Imgmeta.Formats.Bmp.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 640 m.width;
+    Alcotest.(check int) "height" 400 m.height;
+    Alcotest.(check int) "bits per channel from 24 bpp" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+(* a negative height marks a top-down bitmap and must not flip the sign of the
+   reported dimension *)
+let test_bmp_top_down () =
+  let r = Imgmeta.Reader.of_bytes (bmp_info ~width:64 ~height:(-32) ~bits:32) in
+  match Imgmeta.Formats.Bmp.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 64 m.width;
+    Alcotest.(check int) "height" 32 m.height
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let test_bmp_core_header () =
+  let r = Imgmeta.Reader.of_bytes (bmp_core ~width:16 ~height:8 ~bits:1) in
+  match Imgmeta.Formats.Bmp.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 16 m.width;
+    Alcotest.(check int) "height" 8 m.height;
+    Alcotest.(check int) "depth" 1 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let ico_file entries =
+  let n = List.length entries in
+  let buf = Bytes.make (6 + (n * 16)) '\x00' in
+  Bytes.set_uint16_le buf 2 1;
+  Bytes.set_uint16_le buf 4 n;
+  List.iteri
+    (fun i (w, h, bits) ->
+       let off = 6 + (i * 16) in
+       Bytes.set_uint8 buf off (w land 0xff);
+       Bytes.set_uint8 buf (off + 1) (h land 0xff);
+       Bytes.set_uint16_le buf (off + 6) bits)
+    entries;
+  buf
+;;
+
+let test_ico_largest_entry () =
+  let r = Imgmeta.Reader.of_bytes (ico_file [ 16, 16, 32; 48, 48, 32; 32, 32, 32 ]) in
+  match Imgmeta.Formats.Ico.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "largest width" 48 m.width;
+    Alcotest.(check int) "largest height" 48 m.height;
+    Alcotest.(check int) "bits per channel from 32 bpp" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+(* a stored dimension of zero means 256, the largest an icon entry can describe *)
+let test_ico_256_is_encoded_as_zero () =
+  let r = Imgmeta.Reader.of_bytes (ico_file [ 16, 16, 32; 256, 256, 32 ]) in
+  match Imgmeta.Formats.Ico.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 256 m.width;
+    Alcotest.(check int) "height" 256 m.height
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+let qoi_header ~width ~height ~channels =
+  let buf = Bytes.make 14 '\x00' in
+  Bytes.blit_string "qoif" 0 buf 0 4;
+  Bytes.set_int32_be buf 4 (Int32.of_int width);
+  Bytes.set_int32_be buf 8 (Int32.of_int height);
+  Bytes.set_uint8 buf 12 channels;
+  buf
+;;
+
+let test_qoi_header () =
+  let r = Imgmeta.Reader.of_bytes (qoi_header ~width:800 ~height:600 ~channels:4) in
+  match Imgmeta.Formats.Qoi.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) "width" 800 m.width;
+    Alcotest.(check int) "height" 600 m.height;
+    Alcotest.(check int) "depth" 8 m.depth
+  | Error e -> Alcotest.failf "%a" Imgmeta.pp_error e
+;;
+
+(* real cjxl 0.12.0 output for a 96x48 image, kept as bytes because a hand
+   written bit stream would only test this parser against its own encoder *)
+let jxl_raw_hex =
+  "ff 0a cb 07 00 13 88 02 00 fc 00 b5 9f 20 00 00 15 2a a3 8c 1b bc 9c eb f9 f2 43 87 \
+   c5 b4 8d eb 0c 6d b5 6d 61 09 63 b3 bd 30 48 08 80 1a 31 c6 e3 c5 c8 46 93 78 60 00 \
+   08 0c 00 86 30 e9 34 21 00 88 02 a8 e1 68 78 95 24 00"
+;;
+
+let jxl_container_hex =
+  "00 00 00 0c 4a 58 4c 20 0d 0a 87 0a 00 00 00 14 66 74 79 70 6a 78 6c 20 00 00 00 00 \
+   6a 78 6c 20 00 00 00 52 6a 78 6c 63 ff 0a cb 07 00 13 88 02 00 fc 00 b5 9f 20 00 00 \
+   15 2a a3 8c 1b bc 9c eb f9 f2 43 87 c5 b4 8d eb 0c 6d b5 6d 61 09 63 b3 bd 30 48 08 \
+   80 1a 31 c6 e3 c5 c8 46 93 78 60 00 08 0c 00 86 30 e9 34 21 00 88 02 a8 e1 68 78 95 \
+   24 00"
+;;
+
+let check_jxl name hex =
+  let r = Imgmeta.Reader.of_bytes (bytes_of_hex hex) in
+  match Imgmeta.Formats.Jxl.read_metadata r with
+  | Ok m ->
+    Alcotest.(check int) (name ^ " width") 96 m.width;
+    Alcotest.(check int) (name ^ " height") 48 m.height;
+    Alcotest.(check int) (name ^ " depth") 8 m.depth
+  | Error e -> Alcotest.failf "%s %a" name Imgmeta.pp_error e
+;;
+
+let test_jxl_bare_codestream () = check_jxl "bare codestream" jxl_raw_hex
+let test_jxl_container () = check_jxl "container" jxl_container_hex
+
+let test_magic_new_formats () =
+  let check name data expected =
+    Alcotest.(check (option string))
+      name
+      (Some (Imgmeta.format_to_string expected))
+      (Option.map Imgmeta.format_to_string (Imgmeta.Magic.of_bytes data))
+  in
+  check "tiff le" (tiff_simple ~endian:`LE ~width:8 ~height:8 ~bits:8) TIFF;
+  check "tiff be" (tiff_simple ~endian:`BE ~width:8 ~height:8 ~bits:8) TIFF;
+  check "bmp" (bmp_info ~width:8 ~height:8 ~bits:24) BMP;
+  check "ico" (ico_file [ 16, 16, 32 ]) ICO;
+  check "qoi" (qoi_header ~width:8 ~height:8 ~channels:3) QOI;
+  check "jxl bare" (bytes_of_hex jxl_raw_hex) JXL;
+  check "jxl container" (bytes_of_hex jxl_container_hex) JXL
+;;
+
+(* an all zero directory count is the shape most likely to collide with the weak
+   ico signature *)
+let test_magic_rejects_empty_ico_directory () =
+  Alcotest.(check (option string))
+    "an empty directory is not an icon"
+    None
+    (Option.map
+       Imgmeta.format_to_string
+       (Imgmeta.Magic.of_bytes (bytes_of_hex "00 00 01 00 00 00 00 00")))
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -1124,6 +1396,11 @@ let () =
         ; Alcotest.test_case "heif" `Quick test_magic_heif
         ; Alcotest.test_case "avif" `Quick test_magic_avif
         ; Alcotest.test_case "unknown" `Quick test_magic_unknown
+        ; Alcotest.test_case "new format signatures" `Quick test_magic_new_formats
+        ; Alcotest.test_case
+            "empty ico directory rejected"
+            `Quick
+            test_magic_rejects_empty_ico_directory
         ; Alcotest.test_case
             "avif via compatible brand"
             `Quick
@@ -1212,6 +1489,29 @@ let () =
         ; Alcotest.test_case "webp truncated" `Quick test_negative_truncated_webp
         ; Alcotest.test_case "heif truncated" `Quick test_negative_truncated_heif
         ] )
+    ; ( "tiff"
+      , [ Alcotest.test_case "little endian 640x400" `Quick test_tiff_little_endian
+        ; Alcotest.test_case "big endian 1024x768 16 bit" `Quick test_tiff_big_endian
+        ; Alcotest.test_case
+            "out of line bits per sample"
+            `Quick
+            test_tiff_out_of_line_bits_per_sample
+        ; Alcotest.test_case "orientation 6 swap" `Quick test_tiff_orientation_swap
+        ] )
+    ; ( "jxl"
+      , [ Alcotest.test_case "bare codestream 96x48" `Quick test_jxl_bare_codestream
+        ; Alcotest.test_case "isobmff container 96x48" `Quick test_jxl_container
+        ] )
+    ; ( "bmp"
+      , [ Alcotest.test_case "info header 640x400 24bpp" `Quick test_bmp_info_header
+        ; Alcotest.test_case "top down negative height" `Quick test_bmp_top_down
+        ; Alcotest.test_case "core header 16x8 1bpp" `Quick test_bmp_core_header
+        ] )
+    ; ( "ico"
+      , [ Alcotest.test_case "largest directory entry wins" `Quick test_ico_largest_entry
+        ; Alcotest.test_case "256 encoded as zero" `Quick test_ico_256_is_encoded_as_zero
+        ] )
+    ; "qoi", [ Alcotest.test_case "header 800x600" `Quick test_qoi_header ]
     ; ( "hardening"
       , [ Alcotest.test_case
             "png negative chunk length"

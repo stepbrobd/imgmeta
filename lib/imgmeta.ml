@@ -23,6 +23,11 @@ let dispatch r = function
   | WebP -> Formats.Webp.read_metadata r
   | HEIF -> Formats.Heif.read_metadata r
   | AVIF -> Formats.Avif.read_metadata r
+  | TIFF -> Formats.Tiff.read_metadata r
+  | JXL -> Formats.Jxl.read_metadata r
+  | BMP -> Formats.Bmp.read_metadata r
+  | ICO -> Formats.Ico.read_metadata r
+  | QOI -> Formats.Qoi.read_metadata r
 ;;
 
 let read r =
