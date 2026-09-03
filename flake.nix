@@ -26,15 +26,9 @@
       };
 
       formatter = pkgs.writeShellScriptBin "formatter" ''
+        pushd "$(${lib.getExe pkgs.git} rev-parse --show-toplevel)" > /dev/null
         set -eoux pipefail
-        root="$PWD"
-        while [[ ! -f "$root/.git/index" ]]; do
-          if [[ "$root" == "/" ]]; then
-            exit 1
-          fi
-          root="$(dirname "$root")"
-        done
-        pushd "$root" > /dev/null
+        shopt -s globstar
         ${lib.getExe pkgs.nixpkgs-fmt} .
         ${lib.getExe pkgs.ocamlPackages.dune_3} fmt
         popd
@@ -45,7 +39,7 @@
   };
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable-small";
     parts.url = "github:hercules-ci/flake-parts";
     parts.inputs.nixpkgs-lib.follows = "nixpkgs";
     systems.url = "github:nix-systems/triplet";
