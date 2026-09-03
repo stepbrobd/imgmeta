@@ -23,4 +23,5 @@
   (ocaml
    (>= 4.14))
   (alcotest :with-test)
+  (bisect_ppx :with-dev-setup)
   (odoc :with-doc)))

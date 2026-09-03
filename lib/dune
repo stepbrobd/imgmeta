@@ -1,6 +1,8 @@
 (library
  (name imgmeta)
  (public_name imgmeta)
- (wrapped true))
+ (wrapped true)
+ (instrumentation
+  (backend bisect_ppx)))
 
 (include_subdirs qualified)
