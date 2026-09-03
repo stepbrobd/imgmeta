@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2026.903.0
 
 - Add TIFF, JPEG XL, BMP, ICO, and QOI readers.
 - Detect HEIF and AVIF from the full compatible brand list rather than the major
@@ -14,7 +14,11 @@
   loop forever on a negative chunk or box length.
 - Close the file descriptor in `of_file` even when parsing raises.
 - Support `of_in_channel` on non-seekable channels such as pipes.
+- Read the JPEG XL bit depth past the intrinsic size, preview and animation
+  headers instead of assuming eight bits whenever they are present.
 - Declare the `ocaml` lower bound and the test dependency in the opam package.
+- Document the public interface and the shared types. odoc now renders prose
+  rather than bare signatures.
 
 ## 2026.517.1
 
