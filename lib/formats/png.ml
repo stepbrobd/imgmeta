@@ -15,7 +15,8 @@ let scan_exif_orientation r ~start =
       let len = Int32.to_int (Bytes.get_int32_be head 0) in
       let ty = Bytes.sub_string head 4 4 in
       let body_off = !cursor + 8 in
-      if String.equal ty "IEND"
+      (* a negative length would leave the cursor where it is and spin *)
+      if len < 0 || String.equal ty "IEND"
       then ()
       else if String.equal ty "eXIf"
       then (

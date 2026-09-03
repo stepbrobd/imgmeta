@@ -889,6 +889,54 @@ let test_negative_truncated_heif () =
   expect_error "heif truncated" (Bytes.of_string "\x00\x00\x00\x18ftyphei")
 ;;
 
+let png_with_raw_chunk ~ty ~declared_len ~payload =
+  let buf = Buffer.create 96 in
+  Buffer.add_bytes buf (png_header ~width:8 ~height:8 ~depth:8 ~color_type:2);
+  let len_bytes = Bytes.create 4 in
+  Bytes.set_int32_be len_bytes 0 (Int32.of_int declared_len);
+  Buffer.add_bytes buf len_bytes;
+  Buffer.add_string buf ty;
+  Buffer.add_string buf payload;
+  Buffer.to_bytes buf
+;;
+
+let webp_with_raw_chunk ~ty ~declared_len ~payload =
+  let body = Buffer.create 64 in
+  Buffer.add_string body "WEBP";
+  Buffer.add_string body ty;
+  let len_bytes = Bytes.create 4 in
+  Bytes.set_int32_le len_bytes 0 (Int32.of_int declared_len);
+  Buffer.add_bytes body len_bytes;
+  Buffer.add_string body payload;
+  let out = Buffer.create 96 in
+  Buffer.add_string out "RIFF";
+  let size = Bytes.create 4 in
+  Bytes.set_int32_le size 0 (Int32.of_int (Buffer.length body));
+  Buffer.add_bytes out size;
+  Buffer.add_buffer out body;
+  Buffer.to_bytes out
+;;
+
+(* these two would spin forever before the walkers required forward progress. a
+   regression shows up as the suite hanging rather than as a failed check *)
+let test_hardening_png_negative_chunk_length () =
+  let data =
+    png_with_raw_chunk ~ty:"junk" ~declared_len:(-12) ~payload:(String.make 16 '\x00')
+  in
+  match Imgmeta.of_bytes data with
+  | Ok m -> Alcotest.(check int) "width still read" 8 m.width
+  | Error _ -> ()
+;;
+
+let test_hardening_webp_negative_chunk_length () =
+  let data =
+    webp_with_raw_chunk ~ty:"JUNK" ~declared_len:(-8) ~payload:(String.make 16 '\x00')
+  in
+  match Imgmeta.of_bytes data with
+  | Ok _ -> Alcotest.fail "expected an error for a negative riff chunk length"
+  | Error _ -> ()
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -984,6 +1032,16 @@ let () =
         ; Alcotest.test_case "jpeg malformed marker" `Quick test_negative_malformed_jpeg
         ; Alcotest.test_case "webp truncated" `Quick test_negative_truncated_webp
         ; Alcotest.test_case "heif truncated" `Quick test_negative_truncated_heif
+        ] )
+    ; ( "hardening"
+      , [ Alcotest.test_case
+            "png negative chunk length"
+            `Quick
+            test_hardening_png_negative_chunk_length
+        ; Alcotest.test_case
+            "webp negative chunk length"
+            `Quick
+            test_hardening_webp_negative_chunk_length
         ] )
     ]
 ;;

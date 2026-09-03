@@ -7,7 +7,7 @@ type box =
   }
 
 let read_box r ~pos ~limit =
-  if pos + 8 > limit
+  if pos < 0 || pos + 8 > limit
   then None
   else (
     let hdr = Reader.read_at r ~pos ~len:8 in
@@ -23,7 +23,11 @@ let read_box r ~pos ~limit =
       then 8, limit - pos
       else 8, size32
     in
-    Some { kind; pos; size; body_off = pos + header_len; body_len = size - header_len })
+    (* a box that does not cover its own header would stall or rewind a walk *)
+    if size < header_len
+    then None
+    else
+      Some { kind; pos; size; body_off = pos + header_len; body_len = size - header_len })
 ;;
 
 let walk_top r f =
@@ -39,7 +43,7 @@ let walk_top r f =
     | Some b ->
       f b;
       cursor := b.pos + b.size;
-      if b.size = 0 then () else go ()
+      go ()
   in
   go ()
 ;;
@@ -53,7 +57,7 @@ let walk_children r parent f =
     | Some b ->
       f b;
       cursor := b.pos + b.size;
-      if b.size = 0 then () else go ()
+      go ()
   in
   go ()
 ;;
@@ -67,7 +71,7 @@ let walk_children_full r parent f =
     | Some b ->
       f b;
       cursor := b.pos + b.size;
-      if b.size = 0 then () else go ()
+      go ()
   in
   go ()
 ;;
