@@ -989,6 +989,24 @@ let test_public_of_in_channel_pipe () =
        | Error e -> Alcotest.failf "non-seekable channel %a" Imgmeta.pp_error e)
 ;;
 
+let test_hardening_of_file_survives_bad_length () =
+  let path = Filename.temp_file "imgmeta_test" ".png" in
+  Fun.protect
+    ~finally:(fun () -> Sys.remove path)
+    (fun () ->
+       let data =
+         png_with_raw_chunk ~ty:"eXIf" ~declared_len:(-1) ~payload:(String.make 16 '\x00')
+       in
+       Out_channel.with_open_bin path (fun oc -> Out_channel.output_bytes oc data);
+       let outcome =
+         try `Returned (Imgmeta.of_file path) with
+         | e -> `Raised (Printexc.to_string e)
+       in
+       match outcome with
+       | `Raised msg -> Alcotest.failf "of_file raised %s" msg
+       | `Returned _ -> ())
+;;
+
 let () =
   Alcotest.run
     "imgmeta"
@@ -1106,6 +1124,10 @@ let () =
             "png oversized exif length"
             `Quick
             test_hardening_png_oversized_exif_length
+        ; Alcotest.test_case
+            "of_file survives a bad length"
+            `Quick
+            test_hardening_of_file_survives_bad_length
         ] )
     ]
 ;;

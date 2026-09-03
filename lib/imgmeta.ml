@@ -36,10 +36,9 @@ let of_bytes b = read (Reader.of_bytes b)
 let of_file path =
   match Reader.of_file path with
   | Error e -> Error e
-  | Ok r ->
-    let result = read r in
-    Reader.close r;
-    result
+  (* the descriptor is owned here. it has to be released even when a parser
+     raises rather than returning an error *)
+  | Ok r -> Fun.protect ~finally:(fun () -> Reader.close r) (fun () -> read r)
 ;;
 
 let of_in_channel ic =
